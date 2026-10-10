@@ -42,3 +42,21 @@ cd system
 .venv/bin/python -m gateway.task clean --workspace ~/ws --repos api,web --task 7-foo
 ```
 `WOS_TASK_TIMEOUT` (default 1800s) sets the time limit for a task run.
+
+## Reception (admin group)
+
+One Telegram group is the admin channel. Messages there run in the workspace-os folder as an admin agent that can only use `bin/wos`.
+
+1. Create the group, add the bot, make it an admin (turn on Topics if you want them).
+2. Send `/admin` in the group. It becomes Reception (can be set once).
+3. In any other group, send one message so the bot sees it. In Reception, `/groups` lists every group it has seen.
+4. Create a workspace by chatting in Reception: "create workspace invoicer with https://github.com/me/api and https://github.com/me/web".
+5. Link a group: `/bind <group id> <workspace>` (or ask in chat).
+
+Commands (Reception only): `/groups`, `/workspaces`, `/bind <group id> <workspace>`, `/unbind <workspace>`.
+Anywhere: `/new`, `/schedules`, `/stop <id>`, `/resume <id>`, `/id`.
+
+A linked group runs in its workspace folder (read-only chat for now). An unlinked group runs nothing and says so.
+`bin/wos` does the same things from a shell: `bin/wos workspace add|list`, `bin/wos groups`, `bin/wos bind`, `bin/wos unbind`.
+
+Env keys: `WOS_WORKSPACES_DIR` (default `~/workspaces`), `WOS_REGISTRY` (default: `workspaces.yaml` in the state dir), `WOS_REPO_DIR`.

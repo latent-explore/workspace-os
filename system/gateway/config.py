@@ -3,6 +3,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = Path.home() / ".config" / "workspace-os" / "env"
 
 
@@ -31,6 +32,9 @@ class Config:
     run_timeout: int
     task_timeout: int
     schedules_path: Path
+    repo_dir: Path = REPO_ROOT  # the workspace-os folder; Reception runs here
+    workspaces_dir: Path = Path.home() / "workspaces"
+    registry_path: Path = Path.home() / ".local/state/workspace-os/workspaces.yaml"
 
 
 def load(env_file: Path = ENV_FILE) -> Config:
@@ -50,4 +54,7 @@ def load(env_file: Path = ENV_FILE) -> Config:
         run_timeout=int(env.get("WOS_RUN_TIMEOUT", "600")),
         task_timeout=int(env.get("WOS_TASK_TIMEOUT", "1800")),
         schedules_path=Path(env.get("WOS_SCHEDULES", str(state_dir / "schedules.yaml"))).expanduser(),
+        repo_dir=Path(env.get("WOS_REPO_DIR", str(REPO_ROOT))).expanduser(),
+        workspaces_dir=Path(env.get("WOS_WORKSPACES_DIR", str(Path.home() / "workspaces"))).expanduser(),
+        registry_path=Path(env.get("WOS_REGISTRY", str(state_dir / "workspaces.yaml"))).expanduser(),
     )

@@ -17,6 +17,8 @@ class Message:
     user_id: int
     text: str
     update_id: int
+    chat_type: str = "private"
+    chat_title: str = ""
 
 
 def chunk(text: str, limit: int = LIMIT) -> list[str]:
@@ -41,6 +43,7 @@ def to_message(update: dict) -> Message | None:
     return Message(
         key=f"{chat_id}:{thread or 0}", chat_id=chat_id, thread_id=thread,
         user_id=msg["from"]["id"], text=msg["text"], update_id=update["update_id"],
+        chat_type=msg["chat"].get("type", "private"), chat_title=msg["chat"].get("title", ""),
     )
 
 

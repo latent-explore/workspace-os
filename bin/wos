@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Admin helper. Used by hand and by the Reception agent.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/system${PYTHONPATH:+:$PYTHONPATH}"
+exec "$ROOT/system/.venv/bin/python" -m gateway.cli "$@"

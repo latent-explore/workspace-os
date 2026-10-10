@@ -12,6 +12,14 @@ CHAT_PROMPT = (
 )
 CHAT_TOOLS = "Read,Glob,Grep"  # chat is read-only
 
+ADMIN_PROMPT = (
+    "You are the admin assistant for workspace-os, talking over a phone chat in the Reception group. "
+    "Reply in at most 5 short lines, in plain language. Make every change with the bin/wos helper and nothing else. "
+    "Confirm names and repos with the user before creating anything. Never read or print secrets."
+)
+ADMIN_TOOLS = "Read,Glob,Grep,Bash(bin/wos:*),Bash(./bin/wos:*)"
+SECRET_PATHS = "Read(~/.config/workspace-os/**)"  # never let an agent read the secrets file
+
 TASK_PROMPT = (
     "You are doing a coding task. Work only inside the current folder: it holds one git "
     "worktree per repo, each already on the task branch. Run the tests. Commit your work in "
@@ -20,7 +28,7 @@ TASK_PROMPT = (
 )
 TASK_TOOLS = "Read,Glob,Grep,Edit,Write,Bash"
 # Defence in depth only. The real wall is the wos Linux user and the systemd sandbox.
-TASK_DENY = "Bash(git push:*),Bash(gh:*),Bash(sudo:*),WebFetch,WebSearch"
+TASK_DENY = "Bash(git push:*),Bash(gh:*),Bash(sudo:*),WebFetch,WebSearch," + SECRET_PATHS
 SECRET_ENV = ("TELEGRAM_BOT_TOKEN",)
 
 
@@ -44,15 +52,19 @@ class ClaudeRunner:
         self.task_timeout = task_timeout
 
     def run(self, prompt: str, cwd: Path, mode: str = "chat", session_id: str | None = None) -> RunResult:
-        if mode not in ("chat", "task"):
+        if mode not in ("chat", "task", "admin"):
             raise ValueError(f"unknown mode: {mode}")
         cmd = [self.claude_bin, "-p", "--output-format", "json"]
         if mode == "chat":
-            cmd += ["--append-system-prompt", CHAT_PROMPT, "--allowedTools", CHAT_TOOLS]
+            cmd += ["--append-system-prompt", CHAT_PROMPT, "--allowedTools", CHAT_TOOLS,
+                    "--disallowedTools", SECRET_PATHS]
+        elif mode == "admin":
+            cmd += ["--append-system-prompt", ADMIN_PROMPT, "--allowedTools", ADMIN_TOOLS,
+                    "--disallowedTools", SECRET_PATHS]
         else:
             cmd += ["--append-system-prompt", TASK_PROMPT, "--allowedTools", TASK_TOOLS,
                     "--disallowedTools", TASK_DENY]
-        timeout = self.timeout if mode == "chat" else self.task_timeout
+        timeout = self.task_timeout if mode == "task" else self.timeout
         if self.model:
             cmd += ["--model", self.model]
         if session_id:
