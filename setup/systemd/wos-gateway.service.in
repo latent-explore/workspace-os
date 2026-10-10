@@ -9,8 +9,10 @@ ExecStart=@REPO@/system/.venv/bin/python -m gateway
 Restart=always
 RestartSec=5
 # Agents are children of this service, so this caps the gateway and all agents together.
-MemoryMax=64G
-CPUQuota=800%
+# Leaves the rest of the machine (RAM, cores) for local LLMs. MemoryHigh slows things before MemoryMax kills them.
+MemoryHigh=28G
+MemoryMax=32G
+CPUQuota=400%
 
 [Install]
 WantedBy=default.target
