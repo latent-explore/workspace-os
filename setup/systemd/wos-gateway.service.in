@@ -5,6 +5,8 @@ Wants=network-online.target
 
 [Service]
 WorkingDirectory=@REPO@/system
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+Environment=WOS_CLAUDE_BIN=@CLAUDE@
 ExecStart=@REPO@/system/.venv/bin/python -m gateway
 Restart=always
 RestartSec=5

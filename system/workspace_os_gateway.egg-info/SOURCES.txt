@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+gateway/__init__.py
+gateway/__main__.py
+gateway/config.py
+gateway/main.py
+gateway/runner.py
+gateway/state.py
+gateway/telegram.py
+tests/test_gateway.py
+workspace_os_gateway.egg-info/PKG-INFO
+workspace_os_gateway.egg-info/SOURCES.txt
+workspace_os_gateway.egg-info/dependency_links.txt
+workspace_os_gateway.egg-info/requires.txt
+workspace_os_gateway.egg-info/top_level.txt

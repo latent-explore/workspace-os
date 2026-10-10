@@ -8,11 +8,16 @@ if [ ! -x "$REPO/system/.venv/bin/python" ]; then
   "$REPO/system/.venv/bin/pip" install -q -e "$REPO/system"
 fi
 
+# systemd services get a minimal PATH, so write the absolute path of claude into the unit.
+CLAUDE="$(command -v claude || true)"
+[ -n "$CLAUDE" ] || { echo "claude not found in PATH. Install Claude Code first." >&2; exit 1; }
+
 mkdir -p "$HOME/.config/systemd/user"
-sed "s|@REPO@|$REPO|g" "$REPO/setup/systemd/wos-gateway.service.in" \
+sed -e "s|@REPO@|$REPO|g" -e "s|@CLAUDE@|$CLAUDE|g" "$REPO/setup/systemd/wos-gateway.service.in" \
   > "$HOME/.config/systemd/user/wos-gateway.service"
 systemctl --user daemon-reload
-systemctl --user enable --now wos-gateway.service
+systemctl --user enable wos-gateway.service
+systemctl --user restart wos-gateway.service  # re-run applies changes
 systemctl --user --no-pager status wos-gateway.service | head -5
 
 echo
