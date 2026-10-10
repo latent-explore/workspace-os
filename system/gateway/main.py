@@ -1,5 +1,6 @@
 """Gateway: Telegram in, Claude Code out. Chat mode only (step 1)."""
 import logging
+import os
 import threading
 import time
 from datetime import datetime
@@ -29,7 +30,7 @@ class Gateway:
 
     def handle(self, msg: Message) -> None:
         text = msg.text.strip()
-        log.info("message: user=%s chat=%s topic=%s allowed=%s",
+        log.debug("message: user=%s chat=%s topic=%s allowed=%s",
                  msg.user_id, msg.chat_id, msg.thread_id, self.channel.is_allowed(msg.user_id))
         if self.cfg.allowed_user_id is None:  # first-time setup: only reveal the user ID
             if text == "/id":
@@ -119,7 +120,7 @@ def ensure_chat_dir(chat_dir) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(level=os.environ.get("WOS_LOG_LEVEL", "INFO").upper(), format="%(asctime)s %(levelname)s %(message)s")
     cfg = cfg_mod.load()
     if not cfg.telegram_token:
         raise SystemExit("TELEGRAM_BOT_TOKEN is missing. Add it to ~/.config/workspace-os/env")

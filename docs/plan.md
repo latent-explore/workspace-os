@@ -212,6 +212,7 @@ Changed from before: the dispatcher and relay are now **one** gateway, so one se
 - Billing check for headless `claude -p` on Pro.
 - Hermes (or Codex) as a second harness, and the runner test suite.
 - Agent SDK.
+- **Log rotation and cleanup.** *What:* logs must not grow forever. There are three kinds: the systemd journal, our run logs (`state/runs/`) and Claude's session files (`~/.claude/projects/`, deleted after 30 days by default). *How:* cap the journal with `SystemMaxUse=500M`; add a nightly scheduler entry that deletes run logs older than N days after keeping a one-line daily summary (tokens, runs, failures) for reports; raise `cleanupPeriodDays` only if the improver needs older sessions. Logging stays quiet by default: set `WOS_LOG_LEVEL=DEBUG` only when debugging.
 - Public open-source-model bot (see section 12).
 
 **Defer until I have weeks of logs and it hurts:** Improver, Housekeeper, global index, Grafana, Discord, showcase site, sharing, company instance.
