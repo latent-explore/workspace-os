@@ -167,7 +167,7 @@ Changed from before: the dispatcher and relay are now **one** gateway, so one se
 |---|---|---|
 | 1 | **Billing.** On Pro, SDK and `claude -p` usage may draw from a separate monthly credit (reported from 2026-06-15). Third-party use of subscription login is restricted. | **TODO (later):** read Anthropic's Help Center page on the Agent SDK with a Claude plan. Postponed by choice; could change the plan. |
 | 2 | **Pro limits.** Four daily workspaces on Pro will hit limits. | Start with one workspace, measure tokens per run, set a budget per workspace. |
-| 3 | `--resume` may need the same folder. | Test on this machine. |
+| 3 | `--resume` may need the same folder. | **Tested 2026-10-10: works from a different folder too.** Same session ID, history kept. Sessions are stored per folder, so the copy is saved under the new folder as well. Still resume from the same folder to keep one log. |
 | 4 | (Future) SDK feels weaker than CLI. | Only when the SDK is adopted: set the `claude_code` prompt preset, load `CLAUDE.md` and settings, run a parity test. |
 | 5 | Prompt cache expires when idle, so resumed sessions cost more. | Measure. |
 | 6 | Hermes persistence and one-shot behavior unverified. | **TODO (later):** test before Hermes becomes a second harness. |
@@ -176,7 +176,7 @@ Changed from before: the dispatcher and relay are now **one** gateway, so one se
 
 ## 9. Build order
 
-**Step 0: Spike (short).** Test `--resume` from the same and a different folder (risk 3). The billing check (risk 1) is postponed.
+**Step 0: Spike (done).** `--resume` works from the same and a different folder (risk 3). Cost of a tiny run: about $0.002 equivalent, mostly cached context. The billing check (risk 1) is postponed.
 
 **Step 1: Kernel skeleton (weekend 1).**
 - Create `workspace-os` (this repo), `ws-base` and `ws-index` on `latent-explore`.
