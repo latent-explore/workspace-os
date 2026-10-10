@@ -1,0 +1,35 @@
+[Unit]
+Description=Workspace OS gateway (Telegram -> Claude Code)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=wos
+Group=wos
+Type=notify
+NotifyAccess=main
+# Gateway pings every minute; no ping for 3 minutes means it is hung, so restart it.
+WatchdogSec=180
+WorkingDirectory=@HOME@/workspace-os/system
+Environment=PATH=@HOME@/.local/bin:/usr/local/bin:/usr/bin
+Environment=WOS_CLAUDE_BIN=@HOME@/.local/bin/claude
+ExecStart=@HOME@/workspace-os/system/.venv/bin/python -m gateway
+Restart=always
+RestartSec=5
+
+# Agents are children of this service, so these cap the gateway and all agents together.
+# Leaves the rest of the machine (RAM, cores) for local LLMs. MemoryHigh slows things before MemoryMax kills them.
+MemoryHigh=28G
+MemoryMax=32G
+CPUQuota=400%
+
+# Sandbox: no privilege gain, private /tmp, system files read-only, writes only in wos's home.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=@HOME@
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target
