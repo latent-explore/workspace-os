@@ -77,7 +77,7 @@ class WorktreeTests(unittest.TestCase):
         self.assertEqual((report["status"], report["outcome"], report["summary"]), ("ok", "done", "added new.txt"))
         self.assertEqual(report["changes"]["api"]["files"], ["new.txt"])
         self.assertEqual(len(report["changes"]["api"]["commits"]), 1)
-        self.assertEqual(json.loads((state / "tasks" / "7-foo.json").read_text())["session_id"], "s1")
+        self.assertEqual(json.loads((state / "manual_tasks" / "7-foo.json").read_text())["session_id"], "s1")
 
 
 if __name__ == "__main__":

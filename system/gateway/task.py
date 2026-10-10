@@ -20,11 +20,11 @@ def run_task(cfg: cfg_mod.Config, workspace: Path, repos: list[str], task: str, 
     wts = Worktrees(workspace)
     task_dir = wts.create(task, repos, branch)
     runner = runner or ClaudeRunner(cfg.claude_bin, cfg.model, cfg.run_timeout, cfg.task_timeout)
-    record_path = cfg.state_dir / "tasks" / f"{task}.json"
+    record_path = cfg.state_dir / "manual_tasks" / f"{task}.json"
     session = None
     if record_path.exists():  # a second run on the same task continues its session
         session = json.loads(record_path.read_text()).get("session_id")
-    result = runner.run(prompt, task_dir, "task", session)
+    result = runner.run(prompt + "\n\nEnd with exactly one line: 'SUMMARY: <what you did>' or 'BLOCKED: <what you need>'.", task_dir, "task", session)
     write_run_log(cfg.state_dir, f"task:{task}", "task", result)
     state, line = task_outcome(result.text) if result.status == "ok" else ("error", result.text)
     report = {

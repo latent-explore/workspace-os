@@ -13,6 +13,9 @@ WatchdogSec=180
 WorkingDirectory=@HOME@/workspace-os/system
 Environment=PATH=@HOME@/.local/bin:/usr/local/bin:/usr/bin
 Environment=WOS_CLAUDE_BIN=@HOME@/.local/bin/claude
+# Lets the gateway start long jobs as units in wos's own systemd user manager (see jobs.py).
+Environment=XDG_RUNTIME_DIR=/run/user/@UID@
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/@UID@/bus
 ExecStart=@HOME@/workspace-os/system/.venv/bin/python -m gateway
 Restart=always
 RestartSec=5

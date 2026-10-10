@@ -11,15 +11,19 @@ from pathlib import Path
 from . import config as cfg_mod
 from . import systemd
 from .cli import describe_groups
+from .dispatcher import Dispatcher
 from .scheduler import Entry, Scheduler
 from .registry import Chats, Registry, RegistryError
 from .runner import ClaudeRunner
 from .state import Offset, Sessions, write_run_log
+from .tasks import TaskError, TaskStore, detail, summarize
+from .workspace import workspace_repos
 from .telegram import Message, TelegramChannel
 
 log = logging.getLogger("gateway")
 GROUP_TYPES = ("group", "supergroup")
 ADMIN_ONLY = ("/groups", "/workspaces", "/bind", "/unbind")
+TASK_COMMANDS = ("/tasks", "/task", "/addtask", "/cancel", "/retry", "/reply")
 
 
 def normalize(text: str) -> str:
@@ -37,11 +41,13 @@ class Gateway:
         self.sessions = Sessions(cfg.state_dir)
         self.registry = Registry(cfg.registry_path)
         self.chats = Chats(cfg.state_dir)
+        self.tasks = TaskStore(cfg.state_dir)
         self.offset = Offset(cfg.state_dir)
         self.locks: dict[str, threading.Lock] = defaultdict(threading.Lock)  # one run per conversation
         self.pool = ThreadPoolExecutor(max_workers=cfg.max_runs)  # concurrency cap
         self.scheduler = Scheduler(cfg.schedules_path, cfg.state_dir, self.fire_schedule, self.watchdog_ping)
         self.last_poll = time.time()
+        self.dispatcher = Dispatcher(cfg, self.tasks, self.registry, runner, channel, self.pool, write_run_log)
 
     def reply(self, msg: Message, text: str) -> None:
         self.channel.notify(msg.chat_id, text, msg.thread_id)
@@ -87,8 +93,53 @@ class Gateway:
             self.reply(msg, f"{'Paused' if cmd == '/stop' else 'Resumed'} {arg}." if ok else "No such schedule.")
         elif cmd == "/id":
             self.reply(msg, f"Your user ID: {msg.user_id}")
+        elif cmd in TASK_COMMANDS:
+            self.task_command(msg, cmd, arg)
         else:
             self.pool.submit(self.run_chat, msg)
+
+    def linked_workspace(self, msg: Message) -> str | None:
+        found = self.registry.by_chat(msg.chat_id)
+        return found[0] if found else None
+
+    def task_command(self, msg: Message, cmd: str, arg: str) -> None:
+        """Tasks from chat: /tasks, /task 7, /addtask title | details, /cancel 7, /retry 7, /reply 7 text."""
+        try:
+            ws = self.linked_workspace(msg)
+            if cmd == "/tasks":
+                open_states = ("ready", "running", "waiting", "review", "blocked")
+                self.reply(msg, "\n".join(summarize(t) for t in self.tasks.list(ws, open_states)) or "No open tasks.")
+            elif cmd == "/addtask":
+                if ws is None:  # Reception or private chat: the first word names the workspace
+                    ws, _, arg = arg.partition(" ")
+                if ws not in self.registry.all():
+                    raise TaskError("Use /addtask in a linked group, or: /addtask <workspace> <title>")
+                title, _, details = arg.partition("|")
+                target = {"chat_id": msg.chat_id, "thread_id": msg.thread_id}
+                repos = workspace_repos(self.registry.all()[ws]["path"])
+                task = self.tasks.create(ws, title, details, repos, target, source="chat")
+                self.reply(msg, f"Added {summarize(task)}")
+            else:
+                task_id, _, rest = arg.partition(" ")
+                if not task_id.isdigit():
+                    raise TaskError(f"Usage: {cmd} <task id>" + (" <text>" if cmd == "/reply" else ""))
+                task_id = int(task_id)
+                if cmd == "/task":
+                    self.reply(msg, detail(self.tasks.get(task_id)))
+                elif cmd == "/cancel":
+                    self.tasks.set_status(task_id, "cancelled")
+                    self.reply(msg, f"Cancelled #{task_id}. A run already in progress finishes first.")
+                elif cmd == "/retry":
+                    self.tasks.set_status(task_id, "ready")
+                    self.reply(msg, f"#{task_id} is ready again.")
+                elif cmd == "/reply":
+                    if not rest.strip():
+                        raise TaskError("Usage: /reply <task id> <text>")
+                    self.tasks.comment(task_id, rest, by="me")
+                    self.tasks.set_status(task_id, "ready")
+                    self.reply(msg, f"Sent to #{task_id}; it will pick it up.")
+        except TaskError as exc:
+            self.reply(msg, str(exc))
 
     def cmd_admin(self, msg: Message) -> None:
         if msg.chat_type not in GROUP_TYPES:
@@ -161,6 +212,7 @@ class Gateway:
     def serve(self) -> None:
         log.info("gateway started")
         self.scheduler.start()
+        self.dispatcher.start()
         systemd.notify("READY=1")
         for msg, next_offset in self.channel.poll(self.offset.get(), self.mark_polling):
             self.offset.set(next_offset)  # at-most-once: never replay a message after a crash

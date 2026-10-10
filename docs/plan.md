@@ -190,7 +190,7 @@ Changed from before: the dispatcher and relay are now **one** gateway, so one se
 
 **Step 3a: Task mode. DONE.** Worktrees, write-enabled runner, `python -m gateway.task`.
 
-**Step 3b: Minimal task management (next).**
+**Step 3b: Minimal task management. BUILT, deploying (2026-10-10).** Tasks are local records for now (workspace repos for GitHub issues do not exist yet); a task can link to issue and PR URLs, and a GitHub adapter can be added later.
 - A task is a GitHub issue plus a small task record (issue, workspace, repos, session ID, status, Telegram topic).
 - The agent decides how an episode ends: finish, wait and be resumed later, ask me, publish. No fixed endings.
 - The agent gets a small `task` skill with five operations: `next_ready`, `claim`, `comment`, `set_status`, `link`. It can also ask the scheduler to resume it later.
@@ -242,7 +242,7 @@ Rule: build only what the next workspace needs.
 **Interactive access over SSH:** I will also log into the sandbox and run agents and commands myself.
 - `wos` gets a password (or an SSH key), so I can log in directly. Check that SSH allows it.
 - `tmux` has a real use now: interactive sessions survive a dropped connection.
-- Interactive work counts against the same caps. Set a limit on the `wos` user's slice so a terminal session cannot eat the RAM reserved for local LLMs.
+- Interactive work is not capped (decision: it is my own work sandbox). A cap can be added later with a drop-in on `user-<uid>.slice`.
 - Interactive and Telegram share the same session files and the same GitHub identity.
 
 ## 12. A public bot for an open-source model (later)

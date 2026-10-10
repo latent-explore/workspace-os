@@ -23,9 +23,21 @@ SECRET_PATHS = "Read(~/.config/workspace-os/**)"  # never let an agent read the 
 TASK_PROMPT = (
     "You are doing a coding task. Work only inside the current folder: it holds one git "
     "worktree per repo, each already on the task branch. Run the tests. Commit your work in "
-    "each repo with clear messages. Do not push and do not open pull requests; the system does that. "
-    "End with exactly one line: 'SUMMARY: <what you did>', or 'BLOCKED: <what you need from the user>'."
+    "each repo with clear messages. Do not push and do not open pull requests. "
+    "Follow the task skill below to report progress and to say how this episode ends."
 )
+SKILL_FILE = Path(__file__).resolve().parents[2] / "base" / "plugin" / "skills" / "task" / "SKILL.md"
+
+
+def task_system_prompt() -> str:
+    """The task skill text, until skills are installed as a plugin."""
+    try:
+        text = SKILL_FILE.read_text()
+    except FileNotFoundError:
+        return TASK_PROMPT
+    if text.startswith("---"):
+        text = text.split("---", 2)[-1]
+    return TASK_PROMPT + "\n\n" + text.strip()
 TASK_TOOLS = "Read,Glob,Grep,Edit,Write,Bash"
 # Defence in depth only. The real wall is the wos Linux user and the systemd sandbox.
 TASK_DENY = "Bash(git push:*),Bash(gh:*),Bash(sudo:*),WebFetch,WebSearch," + SECRET_PATHS
@@ -51,7 +63,8 @@ class ClaudeRunner:
         self.timeout = timeout
         self.task_timeout = task_timeout
 
-    def run(self, prompt: str, cwd: Path, mode: str = "chat", session_id: str | None = None) -> RunResult:
+    def run(self, prompt: str, cwd: Path, mode: str = "chat", session_id: str | None = None,
+            extra_env: dict | None = None) -> RunResult:
         if mode not in ("chat", "task", "admin"):
             raise ValueError(f"unknown mode: {mode}")
         cmd = [self.claude_bin, "-p", "--output-format", "json"]
@@ -62,7 +75,7 @@ class ClaudeRunner:
             cmd += ["--append-system-prompt", ADMIN_PROMPT, "--allowedTools", ADMIN_TOOLS,
                     "--disallowedTools", SECRET_PATHS]
         else:
-            cmd += ["--append-system-prompt", TASK_PROMPT, "--allowedTools", TASK_TOOLS,
+            cmd += ["--append-system-prompt", task_system_prompt(), "--allowedTools", TASK_TOOLS,
                     "--disallowedTools", TASK_DENY]
         timeout = self.task_timeout if mode == "task" else self.timeout
         if self.model:
@@ -71,6 +84,7 @@ class ClaudeRunner:
             cmd += ["--resume", session_id]
         # Prompt goes through stdin and the command is a list: message text never touches a shell.
         env = {k: v for k, v in os.environ.items() if k not in SECRET_ENV}
+        env.update(extra_env or {})
         try:
             proc = subprocess.run(
                 cmd, input=prompt, cwd=cwd, env=env,

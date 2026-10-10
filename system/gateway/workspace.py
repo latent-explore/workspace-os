@@ -75,3 +75,11 @@ def create_workspace(name: str, repo_urls: list[str], workspaces_dir: Path, regi
         shutil.rmtree(path, ignore_errors=True)
         raise
     return {"name": name, "path": str(path), "repos": names, "committed": committed}
+
+
+def workspace_repos(path: Path) -> list[str]:
+    """Repo folder names listed in a workspace's repos.yaml."""
+    try:
+        return sorted((yaml.safe_load((Path(path) / "repos.yaml").read_text()) or {}).get("repos") or {})
+    except FileNotFoundError:
+        return []

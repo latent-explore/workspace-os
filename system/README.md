@@ -60,3 +60,19 @@ A linked group runs in its workspace folder (read-only chat for now). An unlinke
 `bin/wos` does the same things from a shell: `bin/wos workspace add|list`, `bin/wos groups`, `bin/wos bind`, `bin/wos unbind`.
 
 Env keys: `WOS_WORKSPACES_DIR` (default `~/workspaces`), `WOS_REGISTRY` (default: `workspaces.yaml` in the state dir), `WOS_REPO_DIR`.
+
+## Tasks (step 3b)
+
+A task is a small JSON record (`state/tasks/<id>.json`). The agent decides how an episode ends; the system only remembers and guarantees nothing is lost.
+
+From chat (any linked group; in Reception or a private chat, name the workspace first):
+`/addtask title | details`, `/tasks`, `/task <id>`, `/reply <id> <text>` (answers a blocked task and wakes it), `/cancel <id>`, `/retry <id>`.
+
+The dispatcher runs every 10 seconds: it picks the next `ready` task (up to `WOS_MAX_RUNS`), makes a worktree per repo in the workspace's `repos.yaml`, and starts an agent with the task skill (`base/plugin/skills/task/SKILL.md`).
+The agent reports with `bin/wos task ...` (`comment`, `link`, `status`, `resume`, `notify`, `job start|status|stop`).
+
+- Agent leaves without a state: the task is `blocked` and I get a message.
+- Run fails or the machine restarts mid-run: the task is retried (3 attempts), then `blocked`.
+- Sleeping tasks wake when their time has come and a free check passes (`--check "cmd"` exit 0, or `--when-job-done`). No tokens are spent checking.
+- Long jobs run as their own systemd units under the `wos` user manager (needs `loginctl enable-linger wos`, done by the installer). Limits: `WOS_JOB_MEMORY` (16G), `WOS_JOB_CPU` (200%).
+- Agents never see the bot token: messages go through an outbox that the gateway delivers.
