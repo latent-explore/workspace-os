@@ -1,0 +1,16 @@
+[Unit]
+Description=Workspace OS gateway (Telegram -> Claude Code)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=@REPO@/system
+ExecStart=@REPO@/system/.venv/bin/python -m gateway
+Restart=always
+RestartSec=5
+# Agents are children of this service, so this caps the gateway and all agents together.
+MemoryMax=64G
+CPUQuota=800%
+
+[Install]
+WantedBy=default.target
