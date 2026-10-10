@@ -178,7 +178,7 @@ Changed from before: the dispatcher and relay are now **one** gateway, so one se
 
 **Step 0: Spike (done).** `--resume` works from the same and a different folder (risk 3). Cost of a tiny run: about $0.002 equivalent, mostly cached context. The billing check (risk 1) is postponed.
 
-**Step 1: Kernel skeleton. DONE (2026-10-10).** Runs as a systemd user service under my own account; the `wos` user moves to just before Step 3.
+**Step 1: Kernel skeleton. DONE (2026-10-10).** Now runs as a system service under the sandboxed `wos` user (locked password, no sudo, GitHub token limited to 3 repos, SELinux label on the venv launcher, systemd sandboxing, 32G / 4 cores).
 - Create `workspace-os` (this repo), `ws-base` and `ws-index` on `latent-explore`.
 - `wos` user, secrets file, systemd units.
 - Telegram channel with allowlist: send a message, get a reply.
