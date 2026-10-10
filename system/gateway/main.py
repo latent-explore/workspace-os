@@ -29,6 +29,8 @@ class Gateway:
 
     def handle(self, msg: Message) -> None:
         text = msg.text.strip()
+        log.info("message: user=%s chat=%s topic=%s allowed=%s",
+                 msg.user_id, msg.chat_id, msg.thread_id, self.channel.is_allowed(msg.user_id))
         if self.cfg.allowed_user_id is None:  # first-time setup: only reveal the user ID
             if text == "/id":
                 self.channel.notify(msg.chat_id, f"Your user ID: {msg.user_id}", msg.thread_id)
