@@ -69,9 +69,9 @@ class RunnerTests(unittest.TestCase):
         r = ClaudeRunner("/nonexistent/claude").run("x", Path("."))
         self.assertEqual(r.status, "error")
 
-    def test_task_mode_not_ready(self):
-        with self.assertRaises(NotImplementedError):
-            ClaudeRunner().run("x", Path("."), mode="task")
+    def test_unknown_mode_is_rejected(self):
+        with self.assertRaises(ValueError):
+            ClaudeRunner().run("x", Path("."), mode="nonsense")
 
 
 if __name__ == "__main__":

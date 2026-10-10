@@ -29,6 +29,7 @@ class Config:
     max_runs: int
     claude_bin: str
     run_timeout: int
+    task_timeout: int
     schedules_path: Path
 
 
@@ -47,5 +48,6 @@ def load(env_file: Path = ENV_FILE) -> Config:
         max_runs=int(env.get("WOS_MAX_RUNS", "1")),
         claude_bin=env.get("WOS_CLAUDE_BIN", "claude"),
         run_timeout=int(env.get("WOS_RUN_TIMEOUT", "600")),
+        task_timeout=int(env.get("WOS_TASK_TIMEOUT", "1800")),
         schedules_path=Path(env.get("WOS_SCHEDULES", str(state_dir / "schedules.yaml"))).expanduser(),
     )
