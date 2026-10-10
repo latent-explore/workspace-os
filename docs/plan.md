@@ -178,13 +178,13 @@ Changed from before: the dispatcher and relay are now **one** gateway, so one se
 
 **Step 0: Spike (done).** `--resume` works from the same and a different folder (risk 3). Cost of a tiny run: about $0.002 equivalent, mostly cached context. The billing check (risk 1) is postponed.
 
-**Step 1: Kernel skeleton (weekend 1).**
+**Step 1: Kernel skeleton. DONE (2026-10-10).** Runs as a systemd user service under my own account; the `wos` user moves to just before Step 3.
 - Create `workspace-os` (this repo), `ws-base` and `ws-index` on `latent-explore`.
 - `wos` user, secrets file, systemd units.
 - Telegram channel with allowlist: send a message, get a reply.
 - *Done when:* I message the bot, a worker answers, and it survives `kill -9` and a reboot.
 
-**Step 2: Scheduler.**
+**Step 2: Scheduler. DONE (2026-10-10).** One thread in the gateway, state on disk, catch-up, `/schedules` `/stop` `/resume`, systemd watchdog (tested by freezing the process).
 - Cron and heartbeat in the gateway.
 - *Done when:* a test job sends me a Telegram message at a set time, with no tokens spent until it fires.
 
