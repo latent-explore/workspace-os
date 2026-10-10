@@ -10,8 +10,8 @@ You are the setup agent for workspace-os. Read `docs/plan.md` first.
 - Keep replies short and simple.
 - End with a short report: done, skipped, needs the user.
 
-## Setup (not written yet)
-See `docs/plan.md`, section 9 (build order). Steps will be added to `setup/` as they are built.
+## Setup
+When the user asks to set up workspace-os or to add a workspace, follow the skill in `base/plugin/skills/workspace-os/SKILL.md` (also available as `/workspace-os`). `setup/status.sh` is the checklist that drives setup. Setup runs in a terminal session as the user, never in Reception.
 
 ## Reception (admin chat)
 

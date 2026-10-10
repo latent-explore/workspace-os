@@ -200,11 +200,11 @@ Changed from before: the dispatcher and relay are now **one** gateway, so one se
 - *Done when:* an issue is picked up, an agent works on it across at least two episodes (with a scheduled wake-up between), and I get a summary without a PR being forced.
 
 **Step 4: Setup skill, for what is built so far.**
-- `/workspace-os setup`: host check, repos, `wos` user, systemd service, schedules, secrets file. Safe to re-run.
+- `/workspace-os setup`: host check, repos, `wos` user, systemd service, schedules, secrets file. Safe to re-run. Built as a skill (the guide) over scripts (the checks and the work): `setup/status.sh` is a read-only checklist, `setup/create-user.sh` and `setup/install-gateway-system.sh` do the sudo parts, which the user runs.
 - `/workspace-os add <name>`: folder, workspace repo, repos list, registry entry, Telegram group, workspace Lead agent.
 - *Done when:* `add` creates a test workspace end to end.
 
-**Step 5: Onboard 2-3 workspaces** with `add`. Each has several repos and its own focused agent (the Lead). Candidates: AI Updates, Email, Research Assistant.
+**Step 5: Onboard 2-3 workspaces** with `add`. Task management (step 3b) is deployed and tested here, on the real workspaces, not before. Each has several repos and its own focused agent (the Lead). Candidates: AI Updates, Email, Research Assistant.
 
 **Later (todo):**
 - **Long-running jobs.** *What:* training and experiments must outlive the agent and a gateway restart, with their own RAM and core caps. *How:* one systemd unit (a job manager) supervises all long jobs. A small contract lets an agent hand a job over: a job spec file with the command, working folder, resource limits, log path, a progress/heartbeat file, and a done signal (exit-code file). The manager starts and watches jobs; the existing free wake-up check (`task resume --check`) reads the done signal. Needs a decision on where it runs (the `wos` user manager with linger, or a system unit). An early version exists in `gateway/jobs.py` and `bin/wos task job`, tested as my user only; it will be replaced by this design.
