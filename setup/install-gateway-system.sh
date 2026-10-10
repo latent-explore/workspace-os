@@ -43,10 +43,7 @@ if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "wos" ]; then
     systemctl --user disable --now wos-gateway.service 2>/dev/null || true
 fi
 
-# wos needs its own systemd user manager, so long jobs can outlive the gateway.
-loginctl enable-linger wos
-WOS_UID="$(id -u wos)"
-sed -e "s|@HOME@|$WOS_HOME|g" -e "s|@UID@|$WOS_UID|g" "$REPO/setup/systemd/wos-gateway.system.service.in" \
+sed "s|@HOME@|$WOS_HOME|g" "$REPO/setup/systemd/wos-gateway.system.service.in" \
   > /etc/systemd/system/wos-gateway.service
 systemctl daemon-reload
 systemctl enable wos-gateway.service

@@ -195,7 +195,7 @@ Changed from before: the dispatcher and relay are now **one** gateway, so one se
 - The agent decides how an episode ends: finish, wait and be resumed later, ask me, publish. No fixed endings.
 - The agent gets a small `task` skill with five operations: `next_ready`, `claim`, `comment`, `set_status`, `link`. It can also ask the scheduler to resume it later.
 - The gateway keeps only the guarantees: never lose a task, resume after a crash, run scheduled wake-ups, enforce run caps.
-- Long jobs (training) must outlive the agent and a gateway restart: run them as their own systemd units under `wos`, with their own RAM and core caps.
+- Long jobs (training) are a future todo, see below.
 - A schedule entry can carry a free check script, so the agent is only woken when there is something to look at.
 - *Done when:* an issue is picked up, an agent works on it across at least two episodes (with a scheduled wake-up between), and I get a summary without a PR being forced.
 
@@ -207,6 +207,7 @@ Changed from before: the dispatcher and relay are now **one** gateway, so one se
 **Step 5: Onboard 2-3 workspaces** with `add`. Each has several repos and its own focused agent (the Lead). Candidates: AI Updates, Email, Research Assistant.
 
 **Later (todo):**
+- **Long-running jobs.** *What:* training and experiments must outlive the agent and a gateway restart, with their own RAM and core caps. *How:* one systemd unit (a job manager) supervises all long jobs. A small contract lets an agent hand a job over: a job spec file with the command, working folder, resource limits, log path, a progress/heartbeat file, and a done signal (exit-code file). The manager starts and watches jobs; the existing free wake-up check (`task resume --check`) reads the done signal. Needs a decision on where it runs (the `wos` user manager with linger, or a system unit). An early version exists in `gateway/jobs.py` and `bin/wos task job`, tested as my user only; it will be replaced by this design.
 - **Policy layer** (deferred on purpose). *What:* one rulebook that returns allow / ask / deny for risky actions (push, merge, delete, send, spend, deploy). *How:* a check function the gateway calls before such actions, driven by a small rules file; "ask" sends me an Approve / Deny button. Agent hooks can call it for tool use. Today the wall is the `wos` user, the denied commands, and a token limited to a few repos.
 - Approval cards (Approve / Change / Discuss buttons).
 - Billing check for headless `claude -p` on Pro.
