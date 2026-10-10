@@ -1,0 +1,11 @@
+# Copy to ~/.local/state/workspace-os/schedules.yaml (or set WOS_SCHEDULES).
+# when: "daily 07:00" | "weekly mon 08:30" | "every 30m" (m/h/d) | "once 2026-10-12 09:00"
+# run:  {message: "text"}  sends text, costs no tokens
+#       {prompt: "text", cwd: "~/some/folder"}  starts a read-only agent run, sends its reply
+# until: optional last day (inclusive)
+schedules:
+  - id: good-morning
+    when: "daily 07:00"
+    run: {message: "Good morning"}
+    owner: me
+    until: 2026-12-31

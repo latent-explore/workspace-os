@@ -3,10 +3,8 @@
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 
-if [ ! -x "$REPO/system/.venv/bin/python" ]; then
-  python3 -m venv "$REPO/system/.venv"
-  "$REPO/system/.venv/bin/pip" install -q -e "$REPO/system"
-fi
+[ -x "$REPO/system/.venv/bin/python" ] || python3 -m venv "$REPO/system/.venv"
+"$REPO/system/.venv/bin/pip" install -q -e "$REPO/system"
 
 # systemd services get a minimal PATH, so write the absolute path of claude into the unit.
 CLAUDE="$(command -v claude || true)"

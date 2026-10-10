@@ -4,3 +4,4 @@ Version: 0.1.0
 Summary: Workspace OS gateway: chat channel, runner, sessions
 Requires-Python: >=3.11
 Requires-Dist: requests>=2.31
+Requires-Dist: pyyaml>=6

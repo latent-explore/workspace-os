@@ -60,9 +60,13 @@ class TelegramChannel:
             raise RuntimeError(f"Telegram {method} failed: {data.get('description')}")
         return data["result"]
 
-    def poll(self, offset: int | None):
-        """Yield (Message, next_offset). Retries quietly on network errors."""
+    def poll(self, offset: int | None, on_cycle=None):
+        """Yield (Message, next_offset). Retries quietly on network errors.
+
+        on_cycle is called every loop, so the caller can tell the loop is alive."""
         while True:
+            if on_cycle:
+                on_cycle()
             try:
                 params = {"timeout": 50, "allowed_updates": ["message"]}
                 if offset is not None:

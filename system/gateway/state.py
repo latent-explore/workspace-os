@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 
-def _atomic_write(path: Path, text: str) -> None:
+def atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent)
     with os.fdopen(fd, "w") as f:
@@ -32,12 +32,12 @@ class Sessions:
     def set(self, key: str, session_id: str) -> None:
         data = self._load()
         data[key] = session_id
-        _atomic_write(self.path, json.dumps(data, indent=2))
+        atomic_write(self.path, json.dumps(data, indent=2))
 
     def clear(self, key: str) -> None:
         data = self._load()
         if data.pop(key, None) is not None:
-            _atomic_write(self.path, json.dumps(data, indent=2))
+            atomic_write(self.path, json.dumps(data, indent=2))
 
 
 class Offset:
@@ -53,7 +53,7 @@ class Offset:
             return None
 
     def set(self, value: int) -> None:
-        _atomic_write(self.path, str(value))
+        atomic_write(self.path, str(value))
 
 
 def write_run_log(state_dir: Path, key: str, mode: str, result) -> Path:
@@ -62,7 +62,7 @@ def write_run_log(state_dir: Path, key: str, mode: str, result) -> Path:
     day = time.strftime("%Y-%m-%d", time.localtime(now))
     name = f"{int(now * 1000)}-{key.replace(':', '_')}.json"
     path = state_dir / "runs" / day / name
-    _atomic_write(path, json.dumps({
+    atomic_write(path, json.dumps({
         "time": now, "key": key, "mode": mode, "status": result.status,
         "session_id": result.session_id, "input_tokens": result.input_tokens,
         "output_tokens": result.output_tokens, "cost_usd": result.cost_usd,

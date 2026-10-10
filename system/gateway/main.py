@@ -1,10 +1,15 @@
 """Gateway: Telegram in, Claude Code out. Chat mode only (step 1)."""
 import logging
 import threading
+import time
+from datetime import datetime
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from . import config as cfg_mod
+from . import systemd
+from .scheduler import Entry, Scheduler
 from .runner import ClaudeRunner
 from .state import Offset, Sessions, write_run_log
 from .telegram import Message, TelegramChannel
@@ -19,6 +24,8 @@ class Gateway:
         self.offset = Offset(cfg.state_dir)
         self.locks: dict[str, threading.Lock] = defaultdict(threading.Lock)  # one run per conversation
         self.pool = ThreadPoolExecutor(max_workers=cfg.max_runs)  # concurrency cap
+        self.scheduler = Scheduler(cfg.schedules_path, cfg.state_dir, self.fire_schedule, self.watchdog_ping)
+        self.last_poll = time.time()
 
     def handle(self, msg: Message) -> None:
         text = msg.text.strip()
@@ -34,6 +41,14 @@ class Gateway:
         elif text == "/new":
             self.sessions.clear(msg.key)
             self.channel.notify(msg.chat_id, "Fresh conversation started.", msg.thread_id)
+        elif text == "/schedules":
+            lines = self.scheduler.status(datetime.now())
+            self.channel.notify(msg.chat_id, "\n".join(lines) or "No schedules.", msg.thread_id)
+        elif text.startswith(("/stop ", "/resume ")):
+            command, _, entry_id = text.partition(" ")
+            ok = self.scheduler.set_paused(entry_id.strip(), command == "/stop")
+            reply = f"{'Paused' if command == '/stop' else 'Resumed'} {entry_id.strip()}." if ok else "No such schedule."
+            self.channel.notify(msg.chat_id, reply, msg.thread_id)
         elif text == "/id":
             self.channel.notify(msg.chat_id, f"Your user ID: {msg.user_id}", msg.thread_id)
         else:
@@ -48,9 +63,37 @@ class Gateway:
             write_run_log(self.cfg.state_dir, msg.key, "chat", result)
             self.channel.notify(msg.chat_id, result.text, msg.thread_id)
 
+    def mark_polling(self) -> None:
+        self.last_poll = time.time()
+
+    def fire_schedule(self, entry: Entry) -> None:
+        """Called by the scheduler. Plain messages cost nothing; prompts start an agent run."""
+        chat_id = self.cfg.allowed_user_id  # a private chat has the same id as the user
+        if chat_id is None:
+            log.warning("schedule %s skipped: no allowed user", entry.id)
+        elif "message" in entry.run:
+            self.channel.notify(chat_id, str(entry.run["message"]))
+        else:
+            self.pool.submit(self.run_scheduled, entry, chat_id)
+
+    def run_scheduled(self, entry: Entry, chat_id: int) -> None:
+        key = f"sched:{entry.id}"
+        with self.locks[key]:
+            cwd = Path(entry.run.get("cwd") or self.cfg.chat_dir).expanduser()
+            result = self.runner.run(str(entry.run["prompt"]), cwd, "chat")  # fresh session each time
+            write_run_log(self.cfg.state_dir, key, "chat", result)
+            self.channel.notify(chat_id, result.text)
+
+    def watchdog_ping(self) -> None:
+        """Tell systemd we are alive, but only while the Telegram loop is also alive."""
+        if time.time() - self.last_poll < 150:
+            systemd.notify("WATCHDOG=1")
+
     def serve(self) -> None:
         log.info("gateway started")
-        for msg, next_offset in self.channel.poll(self.offset.get()):
+        self.scheduler.start()
+        systemd.notify("READY=1")
+        for msg, next_offset in self.channel.poll(self.offset.get(), self.mark_polling):
             self.offset.set(next_offset)  # at-most-once: never replay a message after a crash
             try:
                 self.handle(msg)

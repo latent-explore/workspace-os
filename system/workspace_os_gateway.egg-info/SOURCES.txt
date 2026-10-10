@@ -5,9 +5,12 @@ gateway/__main__.py
 gateway/config.py
 gateway/main.py
 gateway/runner.py
+gateway/scheduler.py
 gateway/state.py
+gateway/systemd.py
 gateway/telegram.py
 tests/test_gateway.py
+tests/test_scheduler.py
 workspace_os_gateway.egg-info/PKG-INFO
 workspace_os_gateway.egg-info/SOURCES.txt
 workspace_os_gateway.egg-info/dependency_links.txt
