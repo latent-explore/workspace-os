@@ -14,7 +14,7 @@ The gateway: Telegram in, Claude Code out. Step 1 supports chat mode only (read-
 4. Send `/id` to your bot. Add `TELEGRAM_ALLOWED_USER_ID=<number>` to the env file. Restart.
 5. Message the bot. `/new` starts a fresh conversation.
 
-Optional env keys: `WOS_MODEL`, `WOS_MAX_RUNS` (default 1), `WOS_CHAT_DIR`, `WOS_STATE_DIR`, `WOS_RUN_TIMEOUT`.
+Optional env keys: `WOS_MODEL`, `WOS_MAX_RUNS` (default 1), `WOS_CHAT_DIR` (default: a neutral `chat` folder in the state dir), `WOS_STATE_DIR`, `WOS_RUN_TIMEOUT`.
 
 ## Test
 

@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ENV_FILE = Path.home() / ".config" / "workspace-os" / "env"
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -35,13 +34,14 @@ class Config:
 def load(env_file: Path = ENV_FILE) -> Config:
     env = {**_read_env_file(env_file), **os.environ}
     allowed = env.get("TELEGRAM_ALLOWED_USER_ID", "").strip()
+    state_dir = Path(
+        env.get("WOS_STATE_DIR", str(Path.home() / ".local/state/workspace-os"))
+    ).expanduser()
     return Config(
         telegram_token=env.get("TELEGRAM_BOT_TOKEN", ""),
         allowed_user_id=int(allowed) if allowed else None,
-        chat_dir=Path(env.get("WOS_CHAT_DIR", str(REPO_ROOT))).expanduser(),
-        state_dir=Path(
-            env.get("WOS_STATE_DIR", str(Path.home() / ".local/state/workspace-os"))
-        ).expanduser(),
+        chat_dir=Path(env.get("WOS_CHAT_DIR", str(state_dir / "chat"))).expanduser(),
+        state_dir=state_dir,
         model=env.get("WOS_MODEL") or None,
         max_runs=int(env.get("WOS_MAX_RUNS", "1")),
         claude_bin=env.get("WOS_CLAUDE_BIN", "claude"),

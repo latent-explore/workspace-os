@@ -58,6 +58,21 @@ class Gateway:
                 log.exception("failed handling message")
 
 
+CHAT_CLAUDE_MD = """# Chat
+
+You are the user's assistant, talking over a phone chat.
+Reply in at most 5 short lines, in plain language. Do not explore files unless asked.
+"""
+
+
+def ensure_chat_dir(chat_dir) -> None:
+    """A small neutral folder, so chat does not load a repo's CLAUDE.md and docs."""
+    chat_dir.mkdir(parents=True, exist_ok=True)
+    marker = chat_dir / "CLAUDE.md"
+    if not marker.exists():
+        marker.write_text(CHAT_CLAUDE_MD)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = cfg_mod.load()
@@ -66,6 +81,7 @@ def main() -> None:
     if cfg.allowed_user_id is None:
         log.warning("TELEGRAM_ALLOWED_USER_ID not set: send /id to the bot, then add the number to the env file")
     cfg.state_dir.mkdir(parents=True, exist_ok=True)
+    ensure_chat_dir(cfg.chat_dir)
     Gateway(
         cfg, TelegramChannel(cfg.telegram_token, cfg.allowed_user_id),
         ClaudeRunner(cfg.claude_bin, cfg.model, cfg.run_timeout),
