@@ -20,6 +20,14 @@ runuser -u wos -- bash -c "
   '$APP/system/.venv/bin/pip' install -q -e '$APP/system'
 "
 
+# SELinux (Fedora): systemd may only start programs labelled bin_t, not files in a home folder.
+# Label just the venv's launcher; the service then runs in the unconfined_service_t domain.
+if command -v getenforce >/dev/null && [ "$(getenforce)" != "Disabled" ]; then
+  PATTERN="$APP/system/\\.venv/bin(/.*)?"
+  semanage fcontext -a -t bin_t "$PATTERN" 2>/dev/null || semanage fcontext -m -t bin_t "$PATTERN"
+  restorecon -R "$APP/system/.venv/bin"
+fi
+
 # Secrets: create an empty file if missing. I never copy or read secrets.
 install -d -m 700 -o wos -g wos "$WOS_HOME/.config/workspace-os"
 [ -e "$ENV_FILE" ] || install -m 600 -o wos -g wos /dev/null "$ENV_FILE"
