@@ -188,31 +188,65 @@ Changed from before: the dispatcher and relay are now **one** gateway, so one se
 - Cron and heartbeat in the gateway.
 - *Done when:* a test job sends me a Telegram message at a set time, with no tokens spent until it fires.
 
-**Step 3: Task store + dispatcher.**
-- GitHub issue -> worktree -> worker -> PR -> card in Telegram.
-- Policy layer with approve/deny buttons.
-- *Done when:* an issue turns into a reviewed PR with no help from me.
+**Step 3a: Task mode. DONE.** Worktrees, write-enabled runner, `python -m gateway.task`.
 
-**Step 4: Setup skill.**
-- `/workspace-os setup` and `/workspace-os add`. Safe to re-run, never overwrites.
-- *Done when:* `add` creates a blank test workspace end to end (folder, repo, registry entry, Telegram topic).
+**Step 3b: Minimal task management (next).**
+- A task is a GitHub issue plus a small task record (issue, workspace, repos, session ID, status, Telegram topic).
+- The agent decides how an episode ends: finish, wait and be resumed later, ask me, publish. No fixed endings.
+- The agent gets a small `task` skill with five operations: `next_ready`, `claim`, `comment`, `set_status`, `link`. It can also ask the scheduler to resume it later.
+- The gateway keeps only the guarantees: never lose a task, resume after a crash, run scheduled wake-ups, enforce run caps.
+- Long jobs (training) must outlive the agent and a gateway restart: run them as their own systemd units under `wos`, with their own RAM and core caps.
+- A schedule entry can carry a free check script, so the agent is only woken when there is something to look at.
+- *Done when:* an issue is picked up, an agent works on it across at least two episodes (with a scheduled wake-up between), and I get a summary without a PR being forced.
 
-**Setup is now complete. Workspaces come after this, onboarded with `add`.**
+**Step 4: Setup skill, for what is built so far.**
+- `/workspace-os setup`: host check, repos, `wos` user, systemd service, schedules, secrets file. Safe to re-run.
+- `/workspace-os add <name>`: folder, workspace repo, repos list, registry entry, Telegram group, workspace Lead agent.
+- *Done when:* `add` creates a test workspace end to end.
 
-**Step 5: First workspace.**
-- Onboard it with `/workspace-os add`. Pick it at that point (AI Updates is the safest, Email the most useful).
-- *Done when:* its daily summary arrives on Telegram at 07:00 without me.
-
-**Step 6: More workspaces.** Email, then Calendar, then Research Assistant. Read and draft only at first. Link them once two exist.
+**Step 5: Onboard 2-3 workspaces** with `add`. Each has several repos and its own focused agent (the Lead). Candidates: AI Updates, Email, Research Assistant.
 
 **Later (todo):**
+- **Policy layer** (deferred on purpose). *What:* one rulebook that returns allow / ask / deny for risky actions (push, merge, delete, send, spend, deploy). *How:* a check function the gateway calls before such actions, driven by a small rules file; "ask" sends me an Approve / Deny button. Agent hooks can call it for tool use. Today the wall is the `wos` user, the denied commands, and a token limited to a few repos.
+- Approval cards (Approve / Change / Discuss buttons).
 - Billing check for headless `claude -p` on Pro.
 - Hermes (or Codex) as a second harness, and the runner test suite.
 - Agent SDK.
+- Public open-source-model bot (see section 12).
 
 **Defer until I have weeks of logs and it hurts:** Improver, Housekeeper, global index, Grafana, Discord, showcase site, sharing, company instance.
 
 Rule: build only what the next workspace needs.
+
+---
+
+## 11. Telegram layout and interactive access
+
+**Structure: one bot, one group per workspace, one topic per session.**
+
+| Telegram | Workspace OS |
+|---|---|
+| The bot | One bot for everything (no extra bots needed) |
+| A group (forum mode on) | One workspace. Its Lead agent lives in the General topic. |
+| A topic | One session ID. The gateway maps (group, topic) to (workspace, session). |
+| Private chat with the bot | Alerts and cross-workspace questions |
+
+- Messages go to a session by the topic they are sent in. The gateway already keys on group + topic.
+- Only active or recent sessions get a topic. Finished topics are closed. Abandoned ones are left alone.
+- `/sessions` lists every session in a workspace with its state (active, paused, done, abandoned). `/resume <id>` opens a topic for an old one.
+- Sessions started over SSH are the same files, so they show up in `/sessions` and can be attached to a topic.
+- Never use the same session from the terminal and Telegram at the same moment (two writers).
+- Bots cannot create groups. I create each group once and make the bot an admin (needs the Manage Topics right). `add` will tell me to do this.
+
+**Interactive access over SSH:** I will also log into the sandbox and run agents and commands myself.
+- `wos` gets a password (or an SSH key), so I can log in directly. Check that SSH allows it.
+- `tmux` has a real use now: interactive sessions survive a dropped connection.
+- Interactive work counts against the same caps. Set a limit on the `wos` user's slice so a terminal session cannot eat the RAM reserved for local LLMs.
+- Interactive and Telegram share the same session files and the same GitHub identity.
+
+## 12. A public bot for an open-source model (later)
+
+A separate bot with its own token and its own service, wired to a local open-source model server (for example Ollama or llama.cpp on localhost). No agent, no tools, no files, no access to the sandbox. Its own Linux user and RAM / GPU cap. Needs a per-user rate limit and a message-length cap. It stores nothing. Even if someone attacks it with prompts, it has nothing to reach. It is built apart from the core system.
 
 ---
 
