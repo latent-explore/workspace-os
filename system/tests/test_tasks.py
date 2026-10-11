@@ -94,8 +94,8 @@ class DispatcherTests(Base):
         self.calls = []
 
         class Runner:
-            def run(inner, prompt, cwd, mode, session_id=None, extra_env=None):
-                self.calls.append((prompt, cwd, mode, session_id, extra_env))
+            def run(inner, prompt, cwd, mode, session_id=None, extra_env=None, ctx=None):
+                self.calls.append((prompt, cwd, mode, session_id, extra_env, ctx))
                 return agent(prompt, cwd, extra_env)
 
         return Dispatcher(self.cfg, self.store, self.registry, Runner(), self.channel, SyncPool(), lambda *a: None)
@@ -106,8 +106,9 @@ class DispatcherTests(Base):
         d.tick()
         t = self.store.get(1)
         self.assertEqual((t["status"], t["session_id"], t["branch"]), ("review", "s1", "task/1"))
-        prompt, cwd, mode, session, env = self.calls[0]
+        prompt, cwd, mode, session, env, ctx = self.calls[0]
         self.assertEqual((mode, session, env["WOS_TASK_ID"]), ("task", None, "1"))
+        self.assertEqual((ctx["workspace"], ctx["task_id"]), ("inv", 1))
         self.assertTrue((cwd / "api" / ".git").exists())          # a worktree per repo
         self.assertIn("do it", prompt)
 

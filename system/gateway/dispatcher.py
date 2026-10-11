@@ -152,7 +152,8 @@ class Dispatcher:
                 self.store.update(task_id, lambda t: t.update(branch=branch))
             prompt = (resume_prompt if task["session_id"] else first_prompt)(task, self.wos_bin)
             env = {"WOS_TASK_ID": str(task_id), "WOS_BIN": self.wos_bin}
-            result = self.runner.run(prompt, cwd, "task", task["session_id"], env)
+            ctx = {"workspace": task["workspace"], "task_id": task_id, "notify": task.get("notify")}
+            result = self.runner.run(prompt, cwd, "task", task["session_id"], env, ctx)
             self.write_log(self.cfg.state_dir, f"task:{task_id}", "task", result)
             if result.session_id:
                 self.store.update(task_id, lambda t: t.update(session_id=result.session_id))

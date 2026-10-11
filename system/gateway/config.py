@@ -35,6 +35,8 @@ class Config:
     repo_dir: Path = REPO_ROOT  # the workspace-os folder; Reception runs here
     workspaces_dir: Path = Path.home() / "workspaces"
     registry_path: Path = Path.home() / ".local/state/workspace-os/workspaces.yaml"
+    approvals: bool = True
+    approval_wait: int = 300
     job_memory: str = "16G"
     job_cpu: str = "200%"
 
@@ -59,6 +61,8 @@ def load(env_file: Path = ENV_FILE) -> Config:
         repo_dir=Path(env.get("WOS_REPO_DIR", str(REPO_ROOT))).expanduser(),
         workspaces_dir=Path(env.get("WOS_WORKSPACES_DIR", str(Path.home() / "workspaces"))).expanduser(),
         registry_path=Path(env.get("WOS_REGISTRY", str(state_dir / "workspaces.yaml"))).expanduser(),
+        approvals=env.get("WOS_APPROVALS", "1") != "0",
+        approval_wait=int(env.get("WOS_APPROVAL_WAIT", "300")),
         job_memory=env.get("WOS_JOB_MEMORY", "16G"),
         job_cpu=env.get("WOS_JOB_CPU", "200%"),
     )

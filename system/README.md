@@ -76,3 +76,26 @@ The agent reports with `bin/wos task ...` (`comment`, `link`, `status`, `resume`
 - Sleeping tasks wake when their time has come and a free check passes (`--check "cmd"` exit 0, or `--when-job-done`). No tokens are spent checking.
 - Long jobs are a future todo (see `docs/plan.md`). `bin/wos task job ...` and `gateway/jobs.py` exist but are experimental: they need a systemd user manager for `wos` (linger) that is not set up, and agents are not told about them.
 - Agents never see the bot token: messages go through an outbox that the gateway delivers.
+
+## Permissions and approvals
+
+Permissions are per workspace, kept in `state/permissions.yaml` (outside every workspace, so agents cannot edit it).
+Only the user changes them: `/perms`, `/grant <workspace> <capability>`, `/revoke ...` in Reception, or `bin/wos perms ...` in a terminal (refused inside an agent run).
+
+| Capability | Lets the workspace's agents |
+|---|---|
+| `edit_files` | edit and create files inside the workspace folder (default for new workspaces) |
+| `shell` | run shell commands; risky ones (sudo, rm -rf, git push, curl pipes...) still ask (default for new workspaces) |
+| `web` | fetch pages and search the web |
+| `github` | use GitHub through `bin/wos gh`, on the workspace's repos only |
+| `create_repos` | create private repos named for the workspace (`ws-<name>`, `<name>-*`) |
+| `mcp_manage` | add or remove the workspace's MCP servers |
+
+How a run is checked: only reads are pre-allowed. Every other tool call goes to a permission check (an MCP tool Claude Code calls through `--permission-prompt-tool`). The check answers allow or deny at once from the workspace's grants, and only otherwise raises a card in the task's topic: **Allow once / Always allow for <workspace> / Deny**. "Always allow" saves a rule (or a capability) for that workspace, and is never offered for risky commands. The run waits up to `WOS_APPROVAL_WAIT` seconds (default 300), then the agent is told no answer came and stops.
+
+Hard denies, no card: reading the secrets folder, raw `gh` (use `bin/wos gh`), `bin/wos perms` from an agent.
+Claude Code runs plain read-only shell commands (`ls`, `uname`...) without asking, so those never reach the check.
+Set `WOS_APPROVALS=0` to fall back to the old fixed allow lists.
+
+**This is a policy layer, not a wall.** Agents run as the same Linux user, so an agent with `shell` could still write code that reads the GitHub token. The wall is the `wos` user and the systemd sandbox. Real per-workspace GitHub isolation needs one fine-grained token per workspace (todo in `docs/plan.md`).
+While a card is waiting, that run holds a run slot (`WOS_MAX_RUNS`), so other chats queue behind it.

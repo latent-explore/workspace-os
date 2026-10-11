@@ -18,11 +18,15 @@ from .runner import ClaudeRunner
 from .state import Offset, Sessions, write_run_log
 from .tasks import TaskError, TaskStore, detail, summarize
 from .workspace import workspace_repos
-from .telegram import Message, TelegramChannel
+from .approvals import Approvals
+from .cards import ApprovalCards
+from .mcp import WorkspaceMcp
+from .permissions import CAPABILITIES, Permissions
+from .telegram import Callback, Message, TelegramChannel
 
 log = logging.getLogger("gateway")
 GROUP_TYPES = ("group", "supergroup")
-ADMIN_ONLY = ("/groups", "/workspaces", "/bind", "/unbind")
+ADMIN_ONLY = ("/groups", "/workspaces", "/bind", "/unbind", "/perms", "/grant", "/revoke")
 TASK_COMMANDS = ("/tasks", "/task", "/addtask", "/cancel", "/retry", "/reply")
 
 
@@ -42,6 +46,9 @@ class Gateway:
         self.registry = Registry(cfg.registry_path)
         self.chats = Chats(cfg.state_dir)
         self.tasks = TaskStore(cfg.state_dir)
+        self.perms = Permissions(cfg.state_dir, self.registry)
+        self.approvals = Approvals(cfg.state_dir)
+        self.cards = ApprovalCards(cfg, self.approvals, channel, self.perms)
         self.offset = Offset(cfg.state_dir)
         self.locks: dict[str, threading.Lock] = defaultdict(threading.Lock)  # one run per conversation
         self.pool = ThreadPoolExecutor(max_workers=cfg.max_runs)  # concurrency cap
@@ -52,15 +59,15 @@ class Gateway:
     def reply(self, msg: Message, text: str) -> None:
         self.channel.notify(msg.chat_id, text, msg.thread_id)
 
-    def route(self, msg: Message) -> tuple[Path, str] | None:
-        """Where does this chat run? Private chat: neutral folder. Reception: the workspace-os folder.
-        A linked group: that workspace's folder. Anything else: nowhere."""
+    def route(self, msg: Message) -> tuple[Path, str, str | None] | None:
+        """Where does this chat run, in which mode, for which workspace? Private chat: neutral folder.
+        Reception: the workspace-os folder. A linked group: that workspace's folder. Anything else: nowhere."""
         if msg.chat_type == "private":
-            return self.cfg.chat_dir, "chat"
+            return self.cfg.chat_dir, "chat", None
         if msg.chat_id == self.chats.admin():
-            return self.cfg.repo_dir, "admin"
+            return self.cfg.repo_dir, "admin", None
         found = self.registry.by_chat(msg.chat_id)
-        return (Path(found[1]["path"]), "chat") if found else None
+        return (Path(found[1]["path"]), "chat", found[0]) if found else None
 
     def handle(self, msg: Message) -> None:
         text = normalize(msg.text)
@@ -166,8 +173,26 @@ class Gateway:
             elif cmd == "/unbind":
                 self.registry.unbind(arg)
                 self.reply(msg, f"Unlinked {arg}.")
+            elif cmd == "/perms":
+                self.reply(msg, self.describe_permissions(arg))
+            elif cmd in ("/grant", "/revoke"):
+                workspace, _, capability = arg.partition(" ")
+                if workspace not in self.registry.all():
+                    raise RegistryError(f"no workspace named {workspace!r}")
+                (self.perms.grant if cmd == "/grant" else self.perms.revoke)(workspace, capability.strip())
+                self.reply(msg, f"{'Granted' if cmd == '/grant' else 'Revoked'} {capability.strip()} for {workspace}.")
         except (RegistryError, ValueError) as exc:
             self.reply(msg, f"Error: {exc}. Usage: /bind <group id> <workspace>")
+
+    def describe_permissions(self, workspace: str) -> str:
+        if not workspace:
+            names = "\n".join(f"{name}: {why}" for name, why in CAPABILITIES.items())
+            return f"Capabilities:\n{names}\n\nUse /perms <workspace>, /grant <workspace> <capability>, /revoke <workspace> <capability>."
+        if workspace not in self.registry.all():
+            return f"No workspace named {workspace!r}."
+        shown = self.perms.show(workspace)
+        rules = ", ".join(shown["allow"]) or "none"
+        return f"{workspace}\ncapabilities: {', '.join(shown['capabilities']) or 'none'}\nextra rules: {rules}"
 
     def run_chat(self, msg: Message) -> None:
         with self.locks[msg.key]:
@@ -175,9 +200,10 @@ class Gateway:
             if target is None:
                 self.reply(msg, "This group is not linked to a workspace yet. Link it from Reception: /groups, then /bind.")
                 return
-            cwd, mode = target
+            cwd, mode, workspace = target
             self.channel.typing(msg.chat_id, msg.thread_id)
-            result = self.runner.run(normalize(msg.text), cwd, mode, self.sessions.get(msg.key))
+            ctx = {"workspace": workspace, "notify": {"chat_id": msg.chat_id, "thread_id": msg.thread_id}}
+            result = self.runner.run(normalize(msg.text), cwd, mode, self.sessions.get(msg.key), None, ctx)
             if result.session_id and result.status == "ok":
                 self.sessions.set(msg.key, result.session_id)
             write_run_log(self.cfg.state_dir, msg.key, mode, result)
@@ -200,7 +226,7 @@ class Gateway:
         key = f"sched:{entry.id}"
         with self.locks[key]:
             cwd = Path(entry.run.get("cwd") or self.cfg.chat_dir).expanduser()
-            result = self.runner.run(str(entry.run["prompt"]), cwd, "chat")  # fresh session each time
+            result = self.runner.run(str(entry.run["prompt"]), cwd, "chat", None, None, {"workspace": None, "notify": None})  # fresh session each time
             write_run_log(self.cfg.state_dir, key, "chat", result)
             self.channel.notify(chat_id, result.text)
 
@@ -213,11 +239,15 @@ class Gateway:
         log.info("gateway started")
         self.scheduler.start()
         self.dispatcher.start()
+        self.cards.start()
         systemd.notify("READY=1")
-        for msg, next_offset in self.channel.poll(self.offset.get(), self.mark_polling):
+        for item, next_offset in self.channel.poll(self.offset.get(), self.mark_polling):
             self.offset.set(next_offset)  # at-most-once: never replay a message after a crash
             try:
-                self.handle(msg)
+                if isinstance(item, Callback):
+                    self.cards.handle_callback(item)
+                else:
+                    self.handle(item)
             except Exception:
                 log.exception("failed handling message")
 
@@ -248,7 +278,8 @@ def main() -> None:
     ensure_chat_dir(cfg.chat_dir)
     Gateway(
         cfg, TelegramChannel(cfg.telegram_token, cfg.allowed_user_id),
-        ClaudeRunner(cfg.claude_bin, cfg.model, cfg.run_timeout),
+        ClaudeRunner(cfg.claude_bin, cfg.model, cfg.run_timeout, cfg.task_timeout, cfg.state_dir,
+                     cfg.approvals, WorkspaceMcp(cfg.state_dir), cfg.approval_wait),
     ).serve()
 
 

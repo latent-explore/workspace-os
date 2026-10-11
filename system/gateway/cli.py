@@ -14,7 +14,9 @@ from pathlib import Path
 
 from . import config as cfg_mod
 from .registry import Chats, Registry, RegistryError
-from . import jobs, outbox
+from . import ghwrap, jobs, outbox
+from .mcp import McpError, WorkspaceMcp
+from .permissions import CAPABILITIES, Permissions
 from .tasks import STATUSES, TaskError, TaskStore, detail, parse_duration, summarize
 from .workspace import create_workspace
 
@@ -122,6 +124,51 @@ def run_task_command(args, cfg, registry) -> None:
             print("stopped")
 
 
+def run_perms_command(args, cfg, registry) -> None:
+    """Changing permissions is for the user only. An agent run sets WOS_AGENT, so it is refused here."""
+    perms = Permissions(cfg.state_dir, registry)
+    if args.action != "show" and os.environ.get("WOS_AGENT"):
+        raise ValueError("only the user can change permissions (use /grant in Reception)")
+    if args.action == "show":
+        names = [args.workspace] if args.workspace else list(registry.all())
+        for name in names:
+            shown = perms.show(name)
+            print(f"{name}: capabilities={shown['capabilities']} rules={shown['allow']}")
+        print("capabilities: " + ", ".join(CAPABILITIES))
+        return
+    if args.workspace not in registry.all():
+        raise RegistryError(f"no workspace named {args.workspace!r}")
+    {"grant": perms.grant, "revoke": perms.revoke, "rule": perms.add_rule, "unrule": perms.remove_rule}[args.action](
+        args.workspace, args.value)
+    print("ok")
+
+
+def run_gh_command(args, cfg, registry) -> int:
+    import subprocess
+    if not args.workspace or args.workspace not in registry.all():
+        raise ghwrap.GhDenied("name the workspace: bin/wos gh --workspace NAME -- <gh arguments>")
+    gh_args = args.args[1:] if args.args[:1] == ["--"] else args.args
+    checked = ghwrap.vet(gh_args, args.workspace, Permissions(cfg.state_dir, registry), Path.cwd())
+    return subprocess.run(["gh", *checked]).returncode
+
+
+def run_mcp_command(args, cfg, registry) -> None:
+    store = WorkspaceMcp(cfg.state_dir)
+    if args.action == "list":
+        print(json.dumps(store.servers(args.workspace), indent=2))
+        return
+    if os.environ.get("WOS_AGENT") and "mcp_manage" not in Permissions(cfg.state_dir, registry).caps(args.workspace):
+        raise ValueError(f"{args.workspace!r} may not manage MCP servers. The user can allow it with /grant {args.workspace} mcp_manage")
+    if args.action == "add":
+        command = args.command[1:] if args.command[:1] == ["--"] else args.command
+        if not command:
+            raise McpError("give the command after --, for example: -- npx some-mcp-server")
+        store.add(args.workspace, args.name, command[0], command[1:])
+    else:
+        store.remove(args.workspace, args.name)
+    print("ok")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="bin/wos")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -136,15 +183,41 @@ def main(argv=None) -> int:
     bind.add_argument("name")
     sub.add_parser("unbind").add_argument("name")
     add_task_parser(sub)
+    perms = sub.add_parser("perms").add_subparsers(dest="action", required=True)
+    perms.add_parser("show").add_argument("workspace", nargs="?")
+    for name in ("grant", "revoke", "rule", "unrule"):
+        p = perms.add_parser(name)
+        p.add_argument("workspace")
+        p.add_argument("value")
+    gh = sub.add_parser("gh", help="GitHub, limited to this workspace's repos")
+    gh.add_argument("--workspace", default=os.environ.get("WOS_WORKSPACE") or None)
+    gh.add_argument("args", nargs=argparse.REMAINDER)
+    mcp = sub.add_parser("mcp").add_subparsers(dest="action", required=True)
+    mcp.add_parser("list").add_argument("workspace")
+    mcp_add = mcp.add_parser("add")
+    mcp_add.add_argument("workspace")
+    mcp_add.add_argument("name")
+    mcp_add.add_argument("command", nargs=argparse.REMAINDER)
+    mcp_rm = mcp.add_parser("remove")
+    mcp_rm.add_argument("workspace")
+    mcp_rm.add_argument("name")
     args = ap.parse_args(argv)
 
     cfg = cfg_mod.load()
     registry, chats = Registry(cfg.registry_path), Chats(cfg.state_dir)
     try:
         if args.cmd == "workspace" and args.action == "add":
-            print(json.dumps(create_workspace(args.name, args.repo, cfg.workspaces_dir, registry), indent=2))
+            created = create_workspace(args.name, args.repo, cfg.workspaces_dir, registry)
+            Permissions(cfg.state_dir, registry).seed(args.name)       # default capabilities
+            print(json.dumps(created, indent=2))
         elif args.cmd == "task":
             run_task_command(args, cfg, registry)
+        elif args.cmd == "perms":
+            run_perms_command(args, cfg, registry)
+        elif args.cmd == "gh":
+            return run_gh_command(args, cfg, registry)
+        elif args.cmd == "mcp":
+            run_mcp_command(args, cfg, registry)
         elif args.cmd == "workspace":
             for name, entry in registry.all().items():
                 print(f"{name} | {entry['path']} | group {entry.get('telegram_chat', '-')}")
@@ -156,7 +229,7 @@ def main(argv=None) -> int:
         elif args.cmd == "unbind":
             registry.unbind(args.name)
             print(f"Unlinked {args.name}.")
-    except (RegistryError, TaskError, jobs.JobError) as exc:
+    except (RegistryError, TaskError, jobs.JobError, McpError, ghwrap.GhDenied, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     return 0

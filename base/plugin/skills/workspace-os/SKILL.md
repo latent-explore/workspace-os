@@ -40,7 +40,7 @@ Best run from the Reception group (no sudo) or as `wos` in `/home/wos/workspace-
 3. Confirm the name and repos with the user. Then: `bin/wos workspace add NAME --repo URL --repo URL`.
 4. Put the purpose in the workspace's `docs/ROADMAP.md`.
 5. Link a Telegram group: the user creates a group, adds the bot as admin, sends one message. Then `bin/wos groups` shows its ID and `bin/wos bind CHAT_ID NAME` links it. (In Reception: `/groups`, `/bind`.)
-6. Optional: a `ws-NAME` GitHub repo for the workspace's own files. The wos token cannot create repos, so the user creates it with their own account (`gh repo create <you>/ws-NAME --private`); then, as wos, in the workspace folder: `git remote add origin ...` and `git push -u origin main`.
+6. Optional: a `ws-NAME` GitHub repo for the workspace's own files. The user runs `/grant NAME github` and `/grant NAME create_repos` in Reception; then `bin/wos gh --workspace NAME -- repo create <owner>/ws-NAME` creates it (always private, and only names matching the workspace). Push the workspace's files to it afterwards (a push asks for approval).
 7. Report: workspace path, repos cloned, group linked or not, what needs the user.
 
 Existing work is not moved. A workspace lives in wos's home, cloned from GitHub; push any local-only work to GitHub first.

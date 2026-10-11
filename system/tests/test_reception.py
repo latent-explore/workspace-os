@@ -30,7 +30,7 @@ class FakeRunner:
     def __init__(self):
         self.calls = []
 
-    def run(self, prompt, cwd, mode, session_id=None):
+    def run(self, prompt, cwd, mode, session_id=None, extra_env=None, ctx=None):
         self.calls.append((prompt, cwd, mode))
         from gateway.runner import RunResult
         return RunResult("ok", "reply", "sid")
@@ -56,13 +56,13 @@ class ReceptionTests(unittest.TestCase):
         self.assertEqual(normalize("  plain text "), "plain text")
 
     def test_routes(self):
-        self.assertEqual(self.gw.route(msg("x", 7, "private")), (self.cfg.chat_dir, "chat"))
+        self.assertEqual(self.gw.route(msg("x", 7, "private")), (self.cfg.chat_dir, "chat", None))
         self.assertIsNone(self.gw.route(msg("x", -1)))                     # unknown group: nowhere
         self.gw.handle(msg("/admin", -1))
-        self.assertEqual(self.gw.route(msg("x", -1)), (self.cfg.repo_dir, "admin"))
+        self.assertEqual(self.gw.route(msg("x", -1)), (self.cfg.repo_dir, "admin", None))
         self.gw.registry.add("inv", self.root / "ws" / "inv")
         self.gw.registry.bind("inv", -2)
-        self.assertEqual(self.gw.route(msg("x", -2)), (self.root / "ws" / "inv", "chat"))
+        self.assertEqual(self.gw.route(msg("x", -2)), (self.root / "ws" / "inv", "chat", "inv"))
 
     def test_admin_can_only_be_set_once_and_not_in_private(self):
         self.gw.handle(msg("/admin", 7, "private"))

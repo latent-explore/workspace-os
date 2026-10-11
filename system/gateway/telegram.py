@@ -34,6 +34,25 @@ def chunk(text: str, limit: int = LIMIT) -> list[str]:
     return parts
 
 
+@dataclass
+class Callback:
+    """A tap on an inline button."""
+    id: str
+    user_id: int
+    chat_id: int
+    message_id: int
+    data: str
+    update_id: int
+
+
+def to_callback(update: dict) -> Callback | None:
+    cb = update.get("callback_query")
+    if not cb or not cb.get("data") or not cb.get("message"):
+        return None
+    return Callback(cb["id"], cb["from"]["id"], cb["message"]["chat"]["id"], cb["message"]["message_id"],
+                    cb["data"], update["update_id"])
+
+
 def to_message(update: dict) -> Message | None:
     msg = update.get("message")
     if not msg or not msg.get("text") or "from" not in msg:
@@ -71,14 +90,14 @@ class TelegramChannel:
             if on_cycle:
                 on_cycle()
             try:
-                params = {"timeout": 50, "allowed_updates": ["message"]}
+                params = {"timeout": 50, "allowed_updates": ["message", "callback_query"]}
                 if offset is not None:
                     params["offset"] = offset
                 for update in self._call("getUpdates", **params):
                     offset = update["update_id"] + 1
-                    msg = to_message(update)
-                    if msg:
-                        yield msg, offset
+                    item = to_message(update) or to_callback(update)
+                    if item:
+                        yield item, offset
             except Exception as exc:  # network drop, Telegram hiccup
                 log.warning("poll error: %s", exc)
                 time.sleep(5)
@@ -89,6 +108,26 @@ class TelegramChannel:
             if thread_id:
                 params["message_thread_id"] = thread_id
             self._call("sendMessage", **params)
+
+    def send_card(self, chat_id: int, text: str, buttons: list[tuple[str, str]], thread_id: int | None = None) -> int:
+        """A message with inline buttons, one per row. Returns the message id."""
+        params = {"chat_id": chat_id, "text": text,
+                  "reply_markup": {"inline_keyboard": [[{"text": label, "callback_data": data}] for label, data in buttons]}}
+        if thread_id:
+            params["message_thread_id"] = thread_id
+        return self._call("sendMessage", **params)["message_id"]
+
+    def edit_text(self, chat_id: int, message_id: int, text: str) -> None:
+        try:
+            self._call("editMessageText", chat_id=chat_id, message_id=message_id, text=text)  # also drops the buttons
+        except Exception:
+            pass
+
+    def answer_callback(self, callback_id: str, text: str = "") -> None:
+        try:
+            self._call("answerCallbackQuery", callback_query_id=callback_id, text=text)
+        except Exception:
+            pass
 
     def typing(self, chat_id: int, thread_id: int | None = None) -> None:
         params = {"chat_id": chat_id, "action": "typing"}

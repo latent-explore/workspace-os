@@ -42,8 +42,15 @@ def status(state_dir: Path, task_id: int, unit: str) -> dict:
         code = exit_file.read_text().strip()
         return {"unit": unit, "state": "finished", "exit_code": int(code) if code.isdigit() else None,
                 "log": str(folder / "log.txt")}
-    proc = subprocess.run(["systemctl", "--user", "is-active", unit], capture_output=True, text=True)
-    state = "running" if proc.stdout.strip() in ("active", "activating") else "lost"
+    state = "lost"
+    for _ in range(4):  # a unit that just started can look inactive for a moment
+        proc = subprocess.run(["systemctl", "--user", "is-active", unit], capture_output=True, text=True)
+        if proc.stdout.strip() in ("active", "activating", "deactivating"):
+            state = "running"
+            break
+        if exit_file.exists():
+            return status(state_dir, task_id, unit)
+        time.sleep(0.3)
     return {"unit": unit, "state": state, "exit_code": None, "log": str(folder / "log.txt")}
 
 

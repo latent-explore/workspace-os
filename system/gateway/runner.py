@@ -15,15 +15,21 @@ CHAT_TOOLS = "Read,Glob,Grep"  # chat is read-only
 ADMIN_PROMPT = (
     "You are the admin assistant for workspace-os, talking over a phone chat in the Reception group. "
     "Reply in at most 5 short lines, in plain language. Make every change with the bin/wos helper and nothing else. "
-    "Confirm names and repos with the user before creating anything. Never read or print secrets."
+    "Confirm names and repos with the user before creating anything. Never read or print secrets. "
+    "Permissions are per workspace. If an action is refused, do not look for another way around it: say what "
+    "permission is needed (the user grants it with /grant) and stop."
 )
-ADMIN_TOOLS = "Read,Glob,Grep,Bash(bin/wos:*),Bash(./bin/wos:*)"
+ADMIN_TOOLS = "Read,Glob,Grep,Bash(bin/wos:*),Bash(./bin/wos:*)"  # used only when approvals are off
+# With approvals on, only reads are pre-allowed; every other call goes to the permission check.
+APPROVED_TOOLS = "Read,Glob,Grep"
+APPROVED_DENY = "Bash(sudo:*),Bash(gh:*)," + "Read(~/.config/workspace-os/**)"
 SECRET_PATHS = "Read(~/.config/workspace-os/**)"  # never let an agent read the secrets file
 
 TASK_PROMPT = (
     "You are doing a coding task. Work only inside the current folder: it holds one git "
     "worktree per repo, each already on the task branch. Run the tests. Commit your work in "
-    "each repo with clear messages. Do not push and do not open pull requests. "
+    "each repo with clear messages. Do not push, merge, delete or spend unless your task says to; if you do, "
+    "the user is asked to approve it first. "
     "Follow the task skill below to report progress and to say how this episode ends."
 )
 SKILL_FILE = Path(__file__).resolve().parents[2] / "base" / "plugin" / "skills" / "task" / "SKILL.md"
@@ -57,14 +63,17 @@ class RunResult:
 
 class ClaudeRunner:
     def __init__(self, claude_bin: str = "claude", model: str | None = None, timeout: int = 600,
-                 task_timeout: int = 1800):
+                 task_timeout: int = 1800, state_dir: Path | None = None, approvals: bool = False,
+                 workspace_mcp=None, approval_wait: int = 300):
         self.claude_bin = claude_bin
         self.model = model
         self.timeout = timeout
         self.task_timeout = task_timeout
+        self.state_dir, self.approvals = state_dir, approvals and state_dir is not None
+        self.workspace_mcp, self.approval_wait = workspace_mcp, approval_wait
 
     def run(self, prompt: str, cwd: Path, mode: str = "chat", session_id: str | None = None,
-            extra_env: dict | None = None) -> RunResult:
+            extra_env: dict | None = None, ctx: dict | None = None) -> RunResult:
         if mode not in ("chat", "task", "admin"):
             raise ValueError(f"unknown mode: {mode}")
         cmd = [self.claude_bin, "-p", "--output-format", "json"]
@@ -77,6 +86,18 @@ class ClaudeRunner:
         else:
             cmd += ["--append-system-prompt", task_system_prompt(), "--allowedTools", TASK_TOOLS,
                     "--disallowedTools", TASK_DENY]
+        mcp_file = None
+        if ctx is not None and self.approvals:
+            # Approvals on: only reads are pre-allowed. Everything else asks the permission check, which
+            # applies the workspace's grants or raises a card on my phone.
+            from .mcp import write_run_config
+            servers = self.workspace_mcp.servers(ctx.get("workspace")) if self.workspace_mcp else {}
+            mcp_file = write_run_config(self.state_dir, {**ctx, "mode": mode}, servers, self.approval_wait)
+            prompt_flag = {"chat": CHAT_PROMPT, "admin": ADMIN_PROMPT, "task": task_system_prompt()}[mode]
+            cmd = [self.claude_bin, "-p", "--output-format", "json", "--append-system-prompt", prompt_flag,
+                   "--allowedTools", APPROVED_TOOLS, "--disallowedTools", APPROVED_DENY,
+                   "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-prompt-tool", "mcp__wos__approve"]
+            extra_env = {**(extra_env or {}), "WOS_AGENT": "1", "WOS_WORKSPACE": ctx.get("workspace") or ""}
         timeout = self.task_timeout if mode == "task" else self.timeout
         if self.model:
             cmd += ["--model", self.model]
@@ -85,6 +106,13 @@ class ClaudeRunner:
         # Prompt goes through stdin and the command is a list: message text never touches a shell.
         env = {k: v for k, v in os.environ.items() if k not in SECRET_ENV}
         env.update(extra_env or {})
+        try:
+            return self._run(cmd, prompt, cwd, env, timeout, session_id, mcp_file)
+        finally:
+            if mcp_file:
+                mcp_file.unlink(missing_ok=True)
+
+    def _run(self, cmd, prompt, cwd, env, timeout, session_id, mcp_file) -> RunResult:
         try:
             proc = subprocess.run(
                 cmd, input=prompt, cwd=cwd, env=env,
