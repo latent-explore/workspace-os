@@ -58,7 +58,13 @@ if [ "$REMOVE_USER" -eq 1 ]; then
     loginctl terminate-user wos 2>/dev/null || true
     pkill -u wos 2>/dev/null || true
     sleep 1
-    userdel -r wos && echo "Deleted user wos and $WOS_HOME."
+    pkill -KILL -u wos 2>/dev/null || true   # an open wos shell ignores the polite signal
+    sleep 1
+    userdel -r wos || { echo "userdel failed. Is someone still logged in as wos? Check: ps -u wos" >&2; exit 1; }
+    if getent passwd wos >/dev/null || [ -e "$WOS_HOME" ]; then
+      echo "wos or $WOS_HOME is still there. Check: getent passwd wos ; ls -ld $WOS_HOME" >&2; exit 1
+    fi
+    echo "Deleted user wos and $WOS_HOME."
   else
     echo "User wos does not exist: skipped."
   fi
