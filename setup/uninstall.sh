@@ -23,6 +23,19 @@ PATTERN="$WOS_HOME/workspace-os/system/\\.venv/bin(/.*)?"
 OLD_USER_UNIT=""
 [ -n "${SUDO_USER:-}" ] && OLD_USER_UNIT="$(getent passwd "$SUDO_USER" | cut -d: -f6)/.config/systemd/user/wos-gateway.service"
 
+# Kill wos's processes one by one, never this script or anything above it.
+kill_wos_processes() {
+  local keep=" " pid=$$ p
+  while [ -n "$pid" ] && [ "$pid" -gt 1 ]; do
+    keep+="$pid "
+    pid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')"
+  done
+  for p in $(pgrep -u wos 2>/dev/null); do
+    case "$keep" in *" $p "*) continue ;; esac
+    kill -KILL "$p" 2>/dev/null || true
+  done
+}
+
 # Stopping wos's processes would also kill this script if it was started from inside a wos session.
 if [ "$REMOVE_USER" -eq 1 ]; then
   pid=$$
@@ -67,13 +80,13 @@ fi
 
 if [ "$REMOVE_USER" -eq 1 ]; then
   if getent passwd wos >/dev/null; then
+    echo "Stopping wos processes..."
     loginctl disable-linger wos 2>/dev/null || true
     loginctl terminate-user wos 2>/dev/null || true
-    pkill -u wos 2>/dev/null || true
+    kill_wos_processes     # an open wos shell ignores polite signals, so this is a hard kill
     sleep 1
-    pkill -KILL -u wos 2>/dev/null || true   # an open wos shell ignores the polite signal
-    sleep 1
-    userdel -r wos || { echo "userdel failed. Is someone still logged in as wos? Check: ps -u wos" >&2; exit 1; }
+    echo "Deleting the user..."
+    userdel -r wos || { echo "userdel failed. Still running as wos:" >&2; ps -u wos -o pid,tty,cmd >&2; exit 1; }
     if getent passwd wos >/dev/null || [ -e "$WOS_HOME" ]; then
       echo "wos or $WOS_HOME is still there. Check: getent passwd wos ; ls -ld $WOS_HOME" >&2; exit 1
     fi
