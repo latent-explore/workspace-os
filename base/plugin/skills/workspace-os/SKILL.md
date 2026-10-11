@@ -15,17 +15,22 @@ Two jobs: `setup` (once per machine) and `add <name>` (once per workspace).
 - **Short replies.** One step at a time. End with a short report: done, skipped, needs the user.
 
 ## setup
-Run in the user's own checkout of this repo, as the user (not as wos).
+Two actors: the **admin account** (has sudo; this repo is cloned here and you run here) and **wos** (the sandbox user, no sudo, steps done in `sudo -iu wos`). Run this skill as the admin account, never as wos: the root scripts must come from a copy wos cannot edit.
 
-1. Run `setup/status.sh`. It is a read-only checklist; every line starting `FIX` has a command. Do the **first** FIX only, then re-run. Ask the user to run `sudo setup/status.sh` for the checks inside `/home/wos`.
+1. Run `setup/status.sh`. It is a read-only checklist; every `FIX` line has a command. Do the **first** FIX only, then re-run. Ask the user to run `sudo setup/status.sh` for the checks inside `/home/wos`.
 2. The usual order the FIXes come in:
-   1. Host tools (git, gh, claude, python venv, no sleep). Show the install or mask command.
-   2. `sudo setup/create-user.sh` creates the `wos` sandbox user (locked, private home, no sudo).
-   3. By hand as `wos` (`sudo -iu wos`): install Claude Code and log in, `gh auth login --with-token` with a **fine-grained token limited to the repos wos needs** (creating repos is not needed; do not give more), clone this repo.
-   4. Telegram: the user creates a bot with @BotFather, then the secrets file `~wos/.config/workspace-os/env` gets `TELEGRAM_BOT_TOKEN`. The user sends `/id` to the bot and adds `TELEGRAM_ALLOWED_USER_ID`. You never see the values.
-   5. `sudo setup/install-gateway-system.sh` installs and starts the gateway (builds the venv, SELinux label, sandboxed systemd service with 32G / 4 core caps).
+   1. Admin-side tools (git, gh, python venv, claude, no sleep). Show the install or mask command.
+   2. `sudo setup/create-user.sh` creates the `wos` user (locked, private home, no sudo).
+   3. **As wos, by hand** (you cannot do these; show the commands, the user runs them in `sudo -iu wos`):
+      1. install Claude Code and log in (`curl -fsSL https://claude.ai/install.sh | bash`, then `claude`);
+      2. `gh auth login --with-token` with a **fine-grained token limited to the repos wos needs**, then `gh auth setup-git` and set the git name and email. The token comes before the clone because the repo is private;
+      3. `git clone https://github.com/<owner>/workspace-os.git` into `~/workspace-os`. This is the live copy; it is pull-only.
+   4. Telegram: the user creates a bot with @BotFather and puts `TELEGRAM_BOT_TOKEN` in `/home/wos/.config/workspace-os/env`. The user sends `/id` to the bot and adds `TELEGRAM_ALLOWED_USER_ID`. You never see the values. (The installer creates the file empty if it is missing; run it once, fill the file, run it again.)
+   5. `sudo setup/install-gateway-system.sh` installs and starts the gateway. Run it from the admin copy.
    6. Reception: the user creates a Telegram group, makes the bot an admin, sends `/admin` in it.
-3. Finish when `sudo setup/status.sh` prints "All good." Report what was done and skipped.
+3. Finish when `sudo setup/status.sh` prints "All good." Report what was done and skipped. Next: `add` the first workspace.
+
+Starting over: `sudo setup/uninstall.sh` removes the service; `--remove-user` also deletes wos and all its data (the user must have the bot credentials saved elsewhere first).
 
 ## add <name>
 Best run from the Reception group (no sudo) or as `wos` in `/home/wos/workspace-os`. `bin/wos` works on the state of the user it runs as, so running it as the human's own account would create a workspace the gateway never sees.

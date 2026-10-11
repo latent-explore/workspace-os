@@ -4,11 +4,13 @@ A personal system where AI agents work on your workspaces 24/7 on one always-on 
 
 ## Get started
 
-1. Clone this repo.
+You need a Linux machine with systemd, an admin account (with sudo), Claude Code and `gh` for that account.
+
+1. As the admin account: clone this repo.
 2. Open Claude Code in it: `claude`
 3. Say: "set up workspace-os"
 
-The setup agent follows `CLAUDE.md`.
+The setup agent follows `base/plugin/skills/workspace-os/SKILL.md`. It runs `setup/status.sh`, tells you the next step, and shows the sudo and `wos`-user commands for you to run. Start over any time with `sudo setup/uninstall.sh`.
 
 ## Layout
 

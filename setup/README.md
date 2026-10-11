@@ -22,3 +22,14 @@ The dedicated `wos` Linux user comes before task mode (step 3), when agents get 
 Logs: `sudo journalctl -u wos-gateway -f`
 Status: `systemctl status wos-gateway`
 Restart: `sudo systemctl restart wos-gateway`
+
+## Setup scripts
+
+| Script | Job | Run |
+|---|---|---|
+| `status.sh` | Read-only checklist; `FIX` lines say what to do next | any time; `sudo` for the checks inside `/home/wos` |
+| `create-user.sh` | Create the `wos` user (locked, private, no sudo) | `sudo`, `--dry-run` available |
+| `install-gateway-system.sh` | Install and start the gateway as `wos` | `sudo`, from the admin copy |
+| `uninstall.sh` | Remove the service; `--remove-user` also deletes wos and its data | `sudo`, `--dry-run` available |
+
+Run the root scripts from the admin copy of the repo, never from `/home/wos`: wos could edit its own copy.
