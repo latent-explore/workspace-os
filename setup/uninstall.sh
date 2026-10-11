@@ -23,6 +23,19 @@ PATTERN="$WOS_HOME/workspace-os/system/\\.venv/bin(/.*)?"
 OLD_USER_UNIT=""
 [ -n "${SUDO_USER:-}" ] && OLD_USER_UNIT="$(getent passwd "$SUDO_USER" | cut -d: -f6)/.config/systemd/user/wos-gateway.service"
 
+# Stopping wos's processes would also kill this script if it was started from inside a wos session.
+if [ "$REMOVE_USER" -eq 1 ]; then
+  pid=$$
+  while [ "$pid" -gt 1 ]; do
+    if [ "$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')" = wos ]; then
+      echo "This shell runs inside a wos session (process $pid). Open a fresh login as your admin account (a new SSH connection), then run this again." >&2
+      exit 1
+    fi
+    pid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')"
+    [ -n "$pid" ] || break
+  done
+fi
+
 echo "Plan:"
 echo "  - stop and disable wos-gateway, remove $UNIT"
 echo "  - remove the SELinux label rule for the venv launcher"
