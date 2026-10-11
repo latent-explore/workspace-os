@@ -15,7 +15,14 @@ bad()  { printf '  FIX  %s\n         -> %s\n' "$1" "$2"; problems=$((problems + 
 note() { printf '  note %s\n' "$1"; }
 need_root() { printf '  ...  %s (run with sudo to check)\n' "$1"; }
 as_wos() { runuser -u wos -- "$@"; }
-has() { command -v "$1" >/dev/null 2>&1; }
+# Host tools are checked as the person who ran the script: under sudo, root's PATH misses ~/.local/bin.
+has() {
+  if [ "$IS_ROOT" -eq 1 ] && [ -n "${SUDO_USER:-}" ]; then
+    runuser -l "$SUDO_USER" -c "command -v $1" >/dev/null 2>&1
+  else
+    command -v "$1" >/dev/null 2>&1
+  fi
+}
 
 echo "Host"
 [ "$(uname -s)" = Linux ] && ok "Linux" || bad "Linux is required" "use a Linux machine"
