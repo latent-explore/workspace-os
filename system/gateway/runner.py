@@ -64,13 +64,13 @@ class RunResult:
 class ClaudeRunner:
     def __init__(self, claude_bin: str = "claude", model: str | None = None, timeout: int = 600,
                  task_timeout: int = 1800, state_dir: Path | None = None, approvals: bool = False,
-                 workspace_mcp=None, approval_wait: int = 300):
+                 workspace_mcp=None, approval_wait: int = 300, strict_mcp: bool = False):
         self.claude_bin = claude_bin
         self.model = model
         self.timeout = timeout
         self.task_timeout = task_timeout
         self.state_dir, self.approvals = state_dir, approvals and state_dir is not None
-        self.workspace_mcp, self.approval_wait = workspace_mcp, approval_wait
+        self.workspace_mcp, self.approval_wait, self.strict_mcp = workspace_mcp, approval_wait, strict_mcp
 
     def run(self, prompt: str, cwd: Path, mode: str = "chat", session_id: str | None = None,
             extra_env: dict | None = None, ctx: dict | None = None) -> RunResult:
@@ -96,7 +96,9 @@ class ClaudeRunner:
             prompt_flag = {"chat": CHAT_PROMPT, "admin": ADMIN_PROMPT, "task": task_system_prompt()}[mode]
             cmd = [self.claude_bin, "-p", "--output-format", "json", "--append-system-prompt", prompt_flag,
                    "--allowedTools", APPROVED_TOOLS, "--disallowedTools", APPROVED_DENY,
-                   "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-prompt-tool", "mcp__wos__approve"]
+                   "--mcp-config", str(mcp_file), "--permission-prompt-tool", "mcp__wos__approve"]
+            if self.strict_mcp:       # off by default: connectors (Gmail...) stay visible, every call is still checked
+                cmd.append("--strict-mcp-config")
             extra_env = {**(extra_env or {}), "WOS_AGENT": "1", "WOS_WORKSPACE": ctx.get("workspace") or ""}
         timeout = self.task_timeout if mode == "task" else self.timeout
         if self.model:

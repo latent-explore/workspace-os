@@ -37,6 +37,7 @@ class Config:
     registry_path: Path = Path.home() / ".local/state/workspace-os/workspaces.yaml"
     approvals: bool = True
     approval_wait: int = 300
+    strict_mcp: bool = False
     job_memory: str = "16G"
     job_cpu: str = "200%"
 
@@ -63,6 +64,7 @@ def load(env_file: Path = ENV_FILE) -> Config:
         registry_path=Path(env.get("WOS_REGISTRY", str(state_dir / "workspaces.yaml"))).expanduser(),
         approvals=env.get("WOS_APPROVALS", "1") != "0",
         approval_wait=int(env.get("WOS_APPROVAL_WAIT", "300")),
+        strict_mcp=env.get("WOS_STRICT_MCP", "0") == "1",
         job_memory=env.get("WOS_JOB_MEMORY", "16G"),
         job_cpu=env.get("WOS_JOB_CPU", "200%"),
     )

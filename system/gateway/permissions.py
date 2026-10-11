@@ -223,7 +223,8 @@ class Permissions:
         if tool_name in ("WebFetch", "WebSearch"):
             return {"kind": "cap", "value": "web"}
         if tool_name.startswith("mcp__"):
-            return {"kind": "rule", "value": tool_name}
+            server = tool_name.split("__")[1] if tool_name.count("__") >= 2 else tool_name
+            return {"kind": "rule", "value": f"mcp__{server}__*"}      # the whole server (a connector, say Gmail)
         if tool_name == "Bash":
             command = str(tool_input.get("command", ""))
             if any(p.search(command) for p in RISKY) or RAW_GH.search(command):

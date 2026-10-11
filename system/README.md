@@ -93,6 +93,8 @@ Only the user changes them: `/perms`, `/grant <workspace> <capability>`, `/revok
 
 How a run is checked: only reads are pre-allowed. Every other tool call goes to a permission check (an MCP tool Claude Code calls through `--permission-prompt-tool`). The check answers allow or deny at once from the workspace's grants, and only otherwise raises a card in the task's topic: **Allow once / Always allow for <workspace> / Deny**. "Always allow" saves a rule (or a capability) for that workspace, and is never offered for risky commands. The run waits up to `WOS_APPROVAL_WAIT` seconds (default 300), then the agent is told no answer came and stops.
 
+Connectors (Gmail, Calendar...) from the logged-in Claude account are visible to every run, but each call still goes through the check. Tap "Always allow" on a card, or give a workspace a whole connector up front: `/allow email mcp__claude_ai_Gmail__*` (`/unallow` removes it). Set `WOS_STRICT_MCP=1` to hide everything except the workspace's own MCP servers.
+
 Hard denies, no card: reading the secrets folder, raw `gh` (use `bin/wos gh`), `bin/wos perms` from an agent.
 Claude Code runs plain read-only shell commands (`ls`, `uname`...) without asking, so those never reach the check.
 Set `WOS_APPROVALS=0` to fall back to the old fixed allow lists.

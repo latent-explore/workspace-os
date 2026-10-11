@@ -124,6 +124,13 @@ class RuleForTests(Base):
             self.assertIsNone(rf("Bash", command=never), never)
         self.assertIsNone(self.perms.rule_for({"workspace": None}, "Write", {"file_path": "/x"}))   # no workspace
 
+    def test_connector_always_allow_covers_the_server(self):
+        self.assertEqual(self.perms.rule_for(self.ctx, "mcp__claude_ai_Gmail__search_threads", {}),
+                         {"kind": "rule", "value": "mcp__claude_ai_Gmail__*"})
+        self.perms.add_rule("inv", "mcp__claude_ai_Gmail__*")
+        self.assertEqual(self.check("mcp__claude_ai_Gmail__get_message"), "allow")
+        self.assertEqual(self.check("mcp__claude_ai_Google_Calendar__list_events"), "ask")   # other connectors still ask
+
     def test_apply(self):
         self.perms.apply(self.ctx, {"kind": "rule", "value": "Bash(make:*)"})
         self.perms.apply(self.ctx, {"kind": "cap", "value": "web"})
@@ -336,7 +343,7 @@ class RunnerWiringTests(Base):
         seen = json.loads(args_file.read_text())
         argv = seen["argv"]
         self.assertEqual(argv[argv.index("--permission-prompt-tool") + 1], "mcp__wos__approve")
-        self.assertIn("--strict-mcp-config", argv)
+        self.assertNotIn("--strict-mcp-config", argv)        # connectors like Gmail stay visible; calls are still checked
         self.assertEqual(argv[argv.index("--allowedTools") + 1], "Read,Glob,Grep")       # only reads are pre-allowed
         self.assertEqual(set(seen["cfg"]["mcpServers"]), {"docs", "wos"})
         ctx = json.loads(seen["cfg"]["mcpServers"]["wos"]["env"]["WOS_CTX"])

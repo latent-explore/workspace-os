@@ -26,7 +26,7 @@ from .telegram import Callback, Message, TelegramChannel
 
 log = logging.getLogger("gateway")
 GROUP_TYPES = ("group", "supergroup")
-ADMIN_ONLY = ("/groups", "/workspaces", "/bind", "/unbind", "/perms", "/grant", "/revoke")
+ADMIN_ONLY = ("/groups", "/workspaces", "/bind", "/unbind", "/perms", "/grant", "/revoke", "/allow", "/unallow")
 TASK_COMMANDS = ("/tasks", "/task", "/addtask", "/cancel", "/retry", "/reply")
 
 
@@ -175,6 +175,12 @@ class Gateway:
                 self.reply(msg, f"Unlinked {arg}.")
             elif cmd == "/perms":
                 self.reply(msg, self.describe_permissions(arg))
+            elif cmd in ("/allow", "/unallow"):
+                workspace, _, rule = arg.partition(" ")
+                if workspace not in self.registry.all() or not rule.strip():
+                    raise RegistryError("Usage: /allow <workspace> <rule>, for example /allow email mcp__claude_ai_Gmail__*")
+                (self.perms.add_rule if cmd == "/allow" else self.perms.remove_rule)(workspace, rule.strip())
+                self.reply(msg, f"{'Allowed' if cmd == '/allow' else 'Removed'} {rule.strip()} for {workspace}.")
             elif cmd in ("/grant", "/revoke"):
                 workspace, _, capability = arg.partition(" ")
                 if workspace not in self.registry.all():
@@ -187,7 +193,7 @@ class Gateway:
     def describe_permissions(self, workspace: str) -> str:
         if not workspace:
             names = "\n".join(f"{name}: {why}" for name, why in CAPABILITIES.items())
-            return f"Capabilities:\n{names}\n\nUse /perms <workspace>, /grant <workspace> <capability>, /revoke <workspace> <capability>."
+            return f"Capabilities:\n{names}\n\nUse /perms <workspace>, /grant <workspace> <capability>, /revoke <workspace> <capability>, /allow <workspace> <rule>."
         if workspace not in self.registry.all():
             return f"No workspace named {workspace!r}."
         shown = self.perms.show(workspace)
@@ -279,7 +285,7 @@ def main() -> None:
     Gateway(
         cfg, TelegramChannel(cfg.telegram_token, cfg.allowed_user_id),
         ClaudeRunner(cfg.claude_bin, cfg.model, cfg.run_timeout, cfg.task_timeout, cfg.state_dir,
-                     cfg.approvals, WorkspaceMcp(cfg.state_dir), cfg.approval_wait),
+                     cfg.approvals, WorkspaceMcp(cfg.state_dir), cfg.approval_wait, cfg.strict_mcp),
     ).serve()
 
 
