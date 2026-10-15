@@ -10,7 +10,7 @@ from .state import atomic_write
 class Limits:
     """state/limits.yaml. The run cap can be changed up to a hard maximum, without a restart."""
 
-    def __init__(self, state_dir: Path, default_max_runs: int = 1, hard_max_runs: int = 4):
+    def __init__(self, state_dir: Path, default_max_runs: int = 1, hard_max_runs: int = 100):
         self.path = state_dir / "limits.yaml"
         self.hard_max = max(1, hard_max_runs)
         self.default = min(max(1, default_max_runs), self.hard_max)

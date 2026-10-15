@@ -53,7 +53,7 @@ Small steps, in this order. Each ends with a test. **A to D are built** (E waits
 
 **D. Plugins and limits**
 - Plugins: admin installs and removes plugins at workspace-os scope (`bin/wos plugin ...`, `/plugins`). The list lives in `state/plugins.yaml`; the runner passes one `--plugin-dir` per entry. Their agents and skills become available.
-- Limits: admin changes the run cap (`bin/wos limits set max_runs N`, `/limits N`), up to a hard maximum.
+- Limits: admin changes the run cap (`bin/wos limits set max_runs N`, `/limits N`), up to a hard ceiling (default 100, set in the env file).
 - These are owner-level commands, not workspace capabilities: ordinary agents are denied, the admin agent gets a card (allow once / deny, never "always"). Inside the CLI the admin agent proves itself with a per-run token, so setting an env flag by hand does nothing.
 - Check: install a plugin, see its agent appear, use it in a workspace.
 

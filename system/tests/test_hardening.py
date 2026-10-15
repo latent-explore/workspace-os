@@ -169,8 +169,8 @@ class MessageTests(Base):
         gw = Gateway(cfg, chan, FakeRunner())
         say = lambda text: (gw.handle(Message("-1:0", -1, None, 42, text, 1, "supergroup", "G")), chan.sent[-1])[1]
         say("/admin")
-        self.assertIn("between 1 and 4", say("/limits 99"))
-        self.assertNotIn("/bind", say("/limits 99"))
+        self.assertIn("between 1 and 100", say("/limits 101"))
+        self.assertNotIn("/bind", say("/limits 101"))
         self.assertIn("Usage: /bind", say("/bind nonsense"))
         self.assertIn("Usage: /bind", say("/bind"))
 

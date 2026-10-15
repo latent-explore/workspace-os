@@ -69,7 +69,7 @@ Admin is the only agent for which "hard denies" (the secrets folder, permission 
 
 **Plugins.** `bin/wos plugin install https://github.com/owner/repo` (or `add NAME PATH`, `remove NAME`, `list`) installs a plugin at workspace-os scope; its agents and skills become available to every run. The built-in `wos` plugin is always loaded. Installed plugins live in `~/plugins` and are listed in `state/plugins.yaml`.
 
-**Limits.** `/limits N` or `bin/wos limits set max_runs N` changes how many runs go at once, with no restart, up to `WOS_HARD_MAX_RUNS` (default 4). The default is `WOS_MAX_RUNS` (1).
+**Limits.** `/limits N` or `bin/wos limits set max_runs N` changes how many runs go at once, with no restart, up to the hard ceiling `WOS_HARD_MAX_RUNS` (default 100, set in the env file; changing it needs a gateway restart because it sizes the thread pool). The soft cap that `/limits` changes starts at `WOS_MAX_RUNS` (1) and is saved in `limits.yaml`. Each run is a Claude process using RAM and tokens, so keep the soft cap small (2 or 3 on a Pro plan with a 32G budget).
 
 **Terminal.** Log in as `wos` and run `bin/wos-admin`: the same admin agent, with Claude's own prompts doing the asking.
 

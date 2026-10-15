@@ -321,9 +321,9 @@ class CliTests(Base):
         self.assertIn("max_runs=1", self.run_cli("limits", "show")[1])
         self.assertEqual(self.run_cli("limits", "set", "max_runs", "3")[0], 0)
         self.assertIn("max_runs=3", self.run_cli("limits", "show")[1])
-        code, out = self.run_cli("limits", "set", "max_runs", "9")
+        code, out = self.run_cli("limits", "set", "max_runs", "101")
         self.assertEqual(code, 1)
-        self.assertIn("between 1 and 4", out)
+        self.assertIn("between 1 and 100", out)
 
     def test_plugin_add_list_remove_and_agents(self):
         extra = make_plugin(self.root, "extra")
@@ -369,7 +369,7 @@ class GatewayCommandTests(Base):
         self.assertIn("Runs at once: 1", self.say("/limits"))
         self.assertIn("Runs at once: 3", self.say("/limits 3"))
         self.assertEqual(self.gw.limits.max_runs(), 3)
-        self.assertIn("Error", self.say("/limits 99"))
+        self.assertIn("Error", self.say("/limits 101"))
         self.assertIn("wos (built-in)", self.say("/plugins"))
 
     def test_these_commands_work_only_in_reception(self):
