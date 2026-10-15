@@ -38,7 +38,6 @@ class Config:
     approvals: bool = True
     approval_wait: int = 300
     strict_mcp: bool = False
-    hard_max_runs: int = 100
     admin_dir: Path = Path.home()
     plugins_dir: Path = Path.home() / "plugins"
     job_memory: str = "16G"
@@ -68,7 +67,6 @@ def load(env_file: Path = ENV_FILE) -> Config:
         approvals=env.get("WOS_APPROVALS", "1") != "0",
         approval_wait=int(env.get("WOS_APPROVAL_WAIT", "300")),
         strict_mcp=env.get("WOS_STRICT_MCP", "0") == "1",
-        hard_max_runs=int(env.get("WOS_HARD_MAX_RUNS", "100")),
         admin_dir=Path(env.get("WOS_ADMIN_DIR", str(Path.home()))).expanduser(),
         plugins_dir=Path(env.get("WOS_PLUGINS_DIR", str(Path.home() / "plugins"))).expanduser(),
         job_memory=env.get("WOS_JOB_MEMORY", "16G"),

@@ -29,7 +29,7 @@ DEFAULT_CAPS = ("edit_files", "shell")
 SECRET_HINT = ".config/workspace-os"
 # Text that must never appear in an ordinary agent's tool call: the secrets folder, the rule files and the
 # admin proof. Admin gets a card instead of a refusal.
-PROTECTED_TEXT = (SECRET_HINT, "run-tokens", "WOS_ADMIN", "WOS_AGENT", "permissions.yaml", "plugins.yaml", "limits.yaml")
+PROTECTED_TEXT = (SECRET_HINT, "run-tokens", "WOS_ADMIN", "WOS_AGENT", "permissions.yaml", "plugins.yaml")
 # A saved Bash rule matches by prefix, so a command that can run or write something else is never covered by one.
 UNSAFE_SHELL = ("$(", "${", "`", ">", "<")
 EDIT_TOOLS = ("Edit", "Write", "NotebookEdit", "MultiEdit")
@@ -238,9 +238,9 @@ class Permissions:
                 return Decision("deny", "The admin agent is started by the owner in a terminal.")
             if not admin and (sub in ("bind", "unbind") or words[:2] == ["workspace", "add"]):
                 return Decision("deny", "Only the admin agent creates workspaces or links groups.")
-            if sub == "perms" or (sub in ("plugin", "limits") and words[1:2] not in (["list"], ["show"])) \
+            if sub == "perms" or (sub == "plugin" and words[1:2] != ["list"]) \
                     or words[:2] == ["workspace", "agent"]:
-                return owner_only("changing permissions, plugins, limits or a workspace's agent")
+                return owner_only("changing permissions, plugins or a workspace's agent")
             if sub in ("gh", "mcp"):
                 target = ws or (re.search(r"--workspace[ =](\S+)", seg) or [None, None])[1]
                 need = "github" if sub == "gh" else "mcp_manage"

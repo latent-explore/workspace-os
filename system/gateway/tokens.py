@@ -1,6 +1,6 @@
 """Per-run admin tokens. Only the runner issues one, only for an admin run, and it dies with the run.
 
-bin/wos accepts owner-level changes (permissions, plugins, limits...) from an agent run only if WOS_ADMIN holds a
+bin/wos accepts owner-level changes (permissions, plugins, a workspace's agent) from an agent run only if WOS_ADMIN holds a
 live token. A plain "WOS_ADMIN=1" set by some other agent is worthless.
 """
 import secrets

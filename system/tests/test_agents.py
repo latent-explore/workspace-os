@@ -12,7 +12,6 @@ from unittest import mock
 
 from gateway import cli, tokens
 from gateway import config as cfg_mod
-from gateway.limits import Limits, RunGate
 from gateway.main import Gateway
 from gateway.permissions import Permissions
 from gateway.plugins import Plugins, available_agents, frontmatter_name, plugin_agents, workspace_agents
@@ -184,46 +183,6 @@ class PluginTests(Base):
         self.assertNotIn("email-triage", available_agents(self.plugins, None))
 
 
-class LimitsTests(Base):
-    def test_default_set_clamp(self):
-        limits = Limits(self.state, 1, 4)
-        self.assertEqual(limits.max_runs(), 1)
-        limits.set_max_runs(3)
-        self.assertEqual(Limits(self.state, 1, 4).max_runs(), 3)          # survives a restart
-        for bad in (0, 5, -1):
-            with self.assertRaises(ValueError):
-                limits.set_max_runs(bad)
-        (self.state / "limits.yaml").write_text("max_runs: 99\n")
-        self.assertEqual(limits.max_runs(), 4)                             # a hand-edited file cannot beat the hard maximum
-
-    def test_gate_enforces_the_cap_and_follows_changes(self):
-        limits = Limits(self.state, 1, 4)
-        gate = RunGate(limits)
-        running, peak, lock = [0], [0], threading.Lock()
-
-        def job():
-            with gate:
-                with lock:
-                    running[0] += 1
-                    peak[0] = max(peak[0], running[0])
-                time.sleep(0.15)
-                with lock:
-                    running[0] -= 1
-
-        threads = [threading.Thread(target=job) for _ in range(4)]
-        [t.start() for t in threads]
-        [t.join() for t in threads]
-        self.assertEqual(peak[0], 1)
-        limits.set_max_runs(3)
-        peak[0] = 0
-        threads = [threading.Thread(target=job) for _ in range(4)]
-        [t.start() for t in threads]
-        [t.join() for t in threads]
-        self.assertGreaterEqual(peak[0], 2)
-        self.assertLessEqual(peak[0], 3)
-        self.assertEqual(gate.active, 0)
-
-
 class AdminPermissionTests(Base):
     def setUp(self):
         super().setUp()
@@ -243,14 +202,13 @@ class AdminPermissionTests(Base):
                  ("Bash", {"command": "gh repo list"}),
                  ("Bash", {"command": "bin/wos perms grant inv web"}),
                  ("Bash", {"command": "$WOS_BIN plugin install https://github.com/o/p"}),
-                 ("Bash", {"command": "$WOS_BIN limits set max_runs 2"}),
                  ("Bash", {"command": "$WOS_BIN workspace agent inv email-triage"})]
         for tool, inp in cases:
             self.assertEqual(self.perms.check(self.admin, tool, inp).kind, "ask", inp)
             self.assertEqual(self.perms.check(self.other, tool, inp).kind, "deny", inp)
 
     def test_read_only_wos_commands_are_free_for_everyone(self):
-        for command in ("$WOS_BIN plugin list", "$WOS_BIN limits show", "$WOS_BIN agents", "$WOS_BIN workspace list",
+        for command in ("$WOS_BIN plugin list", "$WOS_BIN limits", "$WOS_BIN agents", "$WOS_BIN workspace list",
                         "$WOS_BIN workspace add x --repo https://github.com/o/r"):
             self.assertEqual(self.perms.check(self.admin, "Bash", {"command": command}).kind, "allow", command)
 
@@ -305,25 +263,23 @@ class CliTests(Base):
         self.assertNotIn("agent", self.registry.all()["inv"])
 
     def test_ordinary_agents_are_blocked_but_the_admin_agent_is_not(self):
-        for argv in (("workspace", "agent", "inv", "wos:admin"), ("limits", "set", "max_runs", "2"),
+        for argv in (("workspace", "agent", "inv", "wos:admin"),
                      ("plugin", "remove", "x"), ("perms", "grant", "inv", "web")):
             code, out = self.run_cli(*argv, env={"WOS_AGENT": "1"})
             self.assertEqual(code, 1, argv)
             self.assertIn("only the", out)
         token = tokens.issue(self.state)                                            # what the runner gives an admin run
-        code, _ = self.run_cli("limits", "set", "max_runs", "2", env={"WOS_AGENT": "1", "WOS_ADMIN": token})
-        self.assertEqual(code, 0)
         code, _ = self.run_cli("perms", "grant", "inv", "web", env={"WOS_AGENT": "1", "WOS_ADMIN": token})
         self.assertEqual(code, 0)
         self.assertIn("web", self.perms.caps("inv"))
 
-    def test_limits(self):
-        self.assertIn("max_runs=1", self.run_cli("limits", "show")[1])
-        self.assertEqual(self.run_cli("limits", "set", "max_runs", "3")[0], 0)
-        self.assertIn("max_runs=3", self.run_cli("limits", "show")[1])
-        code, out = self.run_cli("limits", "set", "max_runs", "101")
-        self.assertEqual(code, 1)
-        self.assertIn("between 1 and 100", out)
+    def test_limits_only_shows_the_ceiling(self):
+        code, out = self.run_cli("limits")
+        self.assertEqual(code, 0)
+        self.assertIn("max_runs=1", out)
+        self.assertIn("WOS_MAX_RUNS", out)
+        with self.assertRaises(SystemExit):                      # there is no way to set it from here
+            self.run_cli("limits", "set", "max_runs", "3")
 
     def test_plugin_add_list_remove_and_agents(self):
         extra = make_plugin(self.root, "extra")
@@ -367,9 +323,8 @@ class GatewayCommandTests(Base):
 
     def test_limits_and_plugins_commands(self):
         self.assertIn("Runs at once: 1", self.say("/limits"))
-        self.assertIn("Runs at once: 3", self.say("/limits 3"))
-        self.assertEqual(self.gw.limits.max_runs(), 3)
-        self.assertIn("Error", self.say("/limits 101"))
+        self.assertIn("WOS_MAX_RUNS", self.say("/limits"))
+        self.assertIn("Runs at once: 1", self.say("/limits 50"))      # an argument changes nothing
         self.assertIn("wos (built-in)", self.say("/plugins"))
 
     def test_these_commands_work_only_in_reception(self):

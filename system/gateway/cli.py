@@ -15,7 +15,6 @@ from pathlib import Path
 from . import config as cfg_mod
 from .registry import Chats, Registry, RegistryError
 from . import ghwrap, jobs, outbox, tokens
-from .limits import Limits
 from .mcp import McpError, WorkspaceMcp
 from .plugins import Plugins, available_agents
 from .permissions import CAPABILITIES, Permissions
@@ -169,15 +168,8 @@ def run_plugin_command(args, cfg) -> None:
         print(f"removed {args.name}")
 
 
-def run_limits_command(args, cfg) -> None:
-    limits = Limits(cfg.state_dir, cfg.max_runs, cfg.hard_max_runs)
-    if args.action == "show":
-        print(f"max_runs={limits.max_runs()} (hard maximum {limits.hard_max})")
-        return
-    if agent_blocked(cfg):
-        raise ValueError("only the owner can change limits")
-    limits.set_max_runs(args.value)
-    print(f"max_runs={limits.max_runs()}")
+def run_limits_command(cfg) -> None:
+    print(f"max_runs={cfg.max_runs} (set WOS_MAX_RUNS in the env file and restart the gateway to change it)")
 
 
 def launch_admin(cfg, extra: list[str]) -> None:
@@ -265,11 +257,7 @@ def main(argv=None) -> int:
     plugin_install.add_argument("url")
     plugin_install.add_argument("--name")
     plugin.add_parser("remove").add_argument("name")
-    limits = sub.add_parser("limits").add_subparsers(dest="action", required=True)
-    limits.add_parser("show")
-    limits_set = limits.add_parser("set")
-    limits_set.add_argument("key", choices=["max_runs"])
-    limits_set.add_argument("value", type=int)
+    sub.add_parser("limits", help="show how many runs go at once")
     sub.add_parser("admin", help="start the admin agent in this terminal").add_argument("claude_args", nargs=argparse.REMAINDER)
     perms = sub.add_parser("perms").add_subparsers(dest="action", required=True)
     perms.add_parser("show").add_argument("workspace", nargs="?")
@@ -311,7 +299,7 @@ def main(argv=None) -> int:
         elif args.cmd == "plugin":
             run_plugin_command(args, cfg)
         elif args.cmd == "limits":
-            run_limits_command(args, cfg)
+            run_limits_command(cfg)
         elif args.cmd == "admin":
             launch_admin(cfg, args.claude_args)
         elif args.cmd == "gh":

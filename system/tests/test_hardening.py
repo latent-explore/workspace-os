@@ -86,7 +86,7 @@ class CheckHardeningTests(Base):
             self.assertEqual(self.kind(self.admin, "Bash", command=command), "deny", command)
 
     def test_forging_the_admin_flag_is_caught_in_the_command_text(self):
-        for command in ("env WOS_ADMIN=1 bin/wos perms grant inv web", "WOS_ADMIN=1 bash -c 'x'", "env -u WOS_AGENT bin/wos limits set max_runs 4",
+        for command in ("env WOS_ADMIN=1 bin/wos perms grant inv web", "WOS_ADMIN=1 bash -c 'x'", "env -u WOS_AGENT bin/wos plugin remove x",
                         "cat /home/wos/.local/state/workspace-os/run-tokens/abc", "echo hi >> permissions.yaml"):
             self.assertEqual(self.kind(self.other, "Bash", command=command), "deny", command)
             self.assertEqual(self.kind(self.admin, "Bash", command=command), "ask", command)
@@ -169,8 +169,7 @@ class MessageTests(Base):
         gw = Gateway(cfg, chan, FakeRunner())
         say = lambda text: (gw.handle(Message("-1:0", -1, None, 42, text, 1, "supergroup", "G")), chan.sent[-1])[1]
         say("/admin")
-        self.assertIn("between 1 and 100", say("/limits 101"))
-        self.assertNotIn("/bind", say("/limits 101"))
+        self.assertIn("Runs at once", say("/limits"))
         self.assertIn("Usage: /bind", say("/bind nonsense"))
         self.assertIn("Usage: /bind", say("/bind"))
 

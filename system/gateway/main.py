@@ -20,7 +20,6 @@ from .tasks import TaskError, TaskStore, detail, summarize
 from .workspace import workspace_repos
 from .approvals import Approvals
 from .cards import ApprovalCards
-from .limits import Limits, RunGate
 from .mcp import WorkspaceMcp
 from .plugins import Plugins, available_agents
 from .permissions import CAPABILITIES, Permissions
@@ -54,14 +53,11 @@ class Gateway:
         self.cards = ApprovalCards(cfg, self.approvals, channel, self.perms)
         self.offset = Offset(cfg.state_dir)
         self.locks: dict[str, threading.Lock] = defaultdict(threading.Lock)  # one run per conversation
-        self.limits = Limits(cfg.state_dir, cfg.max_runs, cfg.hard_max_runs)
-        self.gate = RunGate(self.limits)                               # the run cap, changeable without a restart
         self.plugins = Plugins(cfg.state_dir, cfg.plugins_dir)
-        self.pool = ThreadPoolExecutor(max_workers=cfg.hard_max_runs)  # threads; the gate decides how many run
+        self.pool = ThreadPoolExecutor(max_workers=cfg.max_runs)  # the one ceiling on runs: WOS_MAX_RUNS, changed only by a restart
         self.scheduler = Scheduler(cfg.schedules_path, cfg.state_dir, self.fire_schedule, self.watchdog_ping)
         self.last_poll = time.time()
-        self.dispatcher = Dispatcher(cfg, self.tasks, self.registry, runner, channel, self.pool, write_run_log,
-                                     self.limits, self.gate)
+        self.dispatcher = Dispatcher(cfg, self.tasks, self.registry, runner, channel, self.pool, write_run_log)
 
     def reply(self, msg: Message, text: str) -> None:
         self.channel.notify(msg.chat_id, text, msg.thread_id)
@@ -199,9 +195,7 @@ class Gateway:
                     self.registry.set_agent(workspace, None if name == "default" else name)
                     self.reply(msg, f"{workspace} now uses {name}.")
             elif cmd == "/limits":
-                if arg:
-                    self.limits.set_max_runs(int(arg))
-                self.reply(msg, f"Runs at once: {self.limits.max_runs()} (hard maximum {self.limits.hard_max}).")
+                self.reply(msg, f"Runs at once: {self.cfg.max_runs}. To change it, set WOS_MAX_RUNS in the env file and restart the gateway.")
             elif cmd == "/plugins":
                 self.reply(msg, "\n".join(self.plugins.listing()))
             elif cmd in ("/allow", "/unallow"):
@@ -239,8 +233,7 @@ class Gateway:
             self.channel.typing(msg.chat_id, msg.thread_id)
             ctx = {"workspace": workspace, "notify": {"chat_id": msg.chat_id, "thread_id": msg.thread_id},
                    "agent": self.registry.all().get(workspace, {}).get("agent") if workspace else None}
-            with self.gate:
-                result = self.runner.run(normalize(msg.text), cwd, mode, self.sessions.get(msg.key), None, ctx)
+            result = self.runner.run(normalize(msg.text), cwd, mode, self.sessions.get(msg.key), None, ctx)
             if result.session_id and result.status == "ok":
                 self.sessions.set(msg.key, result.session_id)
             write_run_log(self.cfg.state_dir, msg.key, mode, result)
@@ -263,8 +256,7 @@ class Gateway:
         key = f"sched:{entry.id}"
         with self.locks[key]:
             cwd = Path(entry.run.get("cwd") or self.cfg.chat_dir).expanduser()
-            with self.gate:
-                result = self.runner.run(str(entry.run["prompt"]), cwd, "chat", None, None, {"workspace": None, "notify": None})  # fresh session each time
+            result = self.runner.run(str(entry.run["prompt"]), cwd, "chat", None, None, {"workspace": None, "notify": None})  # fresh session each time
             write_run_log(self.cfg.state_dir, key, "chat", result)
             self.channel.notify(chat_id, result.text)
 

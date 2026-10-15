@@ -43,7 +43,7 @@ cd system
 ```
 `WOS_TASK_TIMEOUT` (default 1800s) sets the time limit for a task run.
 
-## Agents, plugins and limits
+## Agents and plugins
 
 Agents are files in plugins (see `docs/agents.md`). The runner starts one with `claude --agent <name> --plugin-dir ...`.
 
@@ -53,7 +53,7 @@ Agents are files in plugins (see `docs/agents.md`). The runner starts one with `
 | A linked workspace group, and task runs | the workspace's default agent, `wos:workspace`, unless the owner picked another with `/agent` |
 | A scheduled prompt | `wos:workspace` with no workspace (so everything asks) |
 
-Admin is the only agent for which "hard denies" (the secrets folder, permission and state files, raw `gh`, plugin and limit changes) become a card. Those cards offer **Allow once / Deny**, never "Always". Only the admin agent can create workspaces or link groups; ordinary agents are denied those `bin/wos` commands. Inside `bin/wos` the admin agent proves itself with a one-run token (`WOS_ADMIN`), so an env flag set by hand does nothing.
+Admin is the only agent for which "hard denies" (the secrets folder, permission and state files, raw `gh`, plugin changes) become a card. Those cards offer **Allow once / Deny**, never "Always". Only the admin agent can create workspaces or link groups; ordinary agents are denied those `bin/wos` commands. Inside `bin/wos` the admin agent proves itself with a one-run token (`WOS_ADMIN`), so an env flag set by hand does nothing.
 
 **Reception (admin group).** One Telegram group is the admin channel.
 1. Create the group, add the bot, make it an admin (turn on Topics if you want them).
@@ -62,14 +62,14 @@ Admin is the only agent for which "hard denies" (the secrets folder, permission 
 4. Create a workspace by chatting in Reception: "create workspace invoicer with https://github.com/me/api and https://github.com/me/web".
 5. Link a group: `/bind <group id> <workspace>` (or ask in chat).
 
-**Commands (Reception only):** `/groups`, `/workspaces`, `/bind <group id> <workspace>`, `/unbind <workspace>`, `/perms`, `/grant`, `/revoke`, `/allow`, `/unallow`, `/agents [workspace]`, `/agent <workspace> [name|default]`, `/plugins`, `/limits [N]`.
+**Commands (Reception only):** `/groups`, `/workspaces`, `/bind <group id> <workspace>`, `/unbind <workspace>`, `/perms`, `/grant`, `/revoke`, `/allow`, `/unallow`, `/agents [workspace]`, `/agent <workspace> [name|default]`, `/plugins`, `/limits` (shows the cap).
 **Anywhere:** `/new`, `/schedules`, `/stop <id>`, `/resume <id>`, `/id`, and the task commands.
 
 **Agent per workspace.** `/agent <workspace> <name>` picks who answers in that workspace's group and runs its tasks. The name can be any plugin agent (`plugin:agent`) or an agent file in the workspace's own `.claude/agents/`. `default` goes back to `wos:workspace`. `/agents <workspace>` lists the choices.
 
 **Plugins.** `bin/wos plugin install https://github.com/owner/repo` (or `add NAME PATH`, `remove NAME`, `list`) installs a plugin at workspace-os scope; its agents and skills become available to every run. The built-in `wos` plugin is always loaded. Installed plugins live in `~/plugins` and are listed in `state/plugins.yaml`.
 
-**Limits.** `/limits N` or `bin/wos limits set max_runs N` changes how many runs go at once, with no restart, up to the hard ceiling `WOS_HARD_MAX_RUNS` (default 100, set in the env file; changing it needs a gateway restart because it sizes the thread pool). The soft cap that `/limits` changes starts at `WOS_MAX_RUNS` (1) and is saved in `limits.yaml`. Each run is a Claude process using RAM and tokens, so keep the soft cap small (2 or 3 on a Pro plan with a 32G budget).
+**Run cap.** One ceiling, `WOS_MAX_RUNS` in the env file (default 1): how many runs go at once, counting chats, scheduled prompts and task runs. Changing it needs a gateway restart, which only the owner can do (the `wos` user has no sudo), so no agent can raise it. `/limits` and `bin/wos limits` show it. Each run is a Claude process using RAM and tokens, so keep it small (2 or 3 on a Pro plan with a 32G budget).
 
 **Terminal.** Log in as `wos` and run `bin/wos-admin`: the same admin agent, with Claude's own prompts doing the asking.
 
@@ -111,7 +111,7 @@ How a run is checked: only reads are pre-allowed. Every other tool call goes to 
 
 Connectors (Gmail, Calendar...) from the logged-in Claude account are visible to every run, but each call still goes through the check. Tap "Always allow" on a card, or give a workspace a whole connector up front: `/allow email mcp__claude_ai_Gmail__*` (`/unallow` removes it). Set `WOS_STRICT_MCP=1` to hide everything except the workspace's own MCP servers.
 
-Hard denies for ordinary agents, no card: reading the secrets folder, raw `gh` (use `bin/wos gh`), `bin/wos perms`, plugin and limit changes. For the admin agent each of these is a card.
+Hard denies for ordinary agents, no card: reading the secrets folder, raw `gh` (use `bin/wos gh`), `bin/wos perms`, plugin changes. For the admin agent each of these is a card.
 A saved "always allow" shell rule matches by prefix and is never saved or applied for commands with `$(`, backticks, redirects (`>`, `<`) or open-ended tools (`find`, `sed`, `tar`, `awk`...).
 Claude Code runs plain read-only shell commands (`ls`, `uname`...) without asking, so those never reach the check.
 Set `WOS_APPROVALS=0` to fall back to the old fixed allow lists.
