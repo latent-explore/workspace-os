@@ -1,53 +1,45 @@
-"""Runner: starts Claude Code headless and returns one standard result."""
+"""Runner: starts Claude Code headless as a named agent and returns one standard result.
+
+Agents are files in plugins (`base/plugin/agents/*.md`, plus any installed plugin and any
+workspace's own `.claude/agents`). The runner only picks which one to start.
+"""
 import json
 import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-CHAT_PROMPT = (
-    "You are talking to the user over a phone chat. Reply in at most 5 short lines, "
-    "in plain simple language. Ask one question at a time. If an answer needs more, "
-    "write it to a file and give the path."
-)
-CHAT_TOOLS = "Read,Glob,Grep"  # chat is read-only
+from . import tokens
 
-ADMIN_PROMPT = (
-    "You are the admin assistant for workspace-os, talking over a phone chat in the Reception group. "
-    "Reply in at most 5 short lines, in plain language. Make every change with the bin/wos helper and nothing else. "
-    "Confirm names and repos with the user before creating anything. Never read or print secrets. "
-    "Permissions are per workspace. If an action is refused, do not look for another way around it: say what "
-    "permission is needed (the user grants it with /grant) and stop."
-)
-ADMIN_TOOLS = "Read,Glob,Grep,Bash(bin/wos:*),Bash(./bin/wos:*)"  # used only when approvals are off
-# With approvals on, only reads are pre-allowed; every other call goes to the permission check.
-APPROVED_TOOLS = "Read,Glob,Grep"
-APPROVED_DENY = "Bash(sudo:*),Bash(gh:*)," + "Read(~/.config/workspace-os/**)"
-SECRET_PATHS = "Read(~/.config/workspace-os/**)"  # never let an agent read the secrets file
+REPO_ROOT = Path(__file__).resolve().parents[2]
+BUILTIN_PLUGIN = REPO_ROOT / "base" / "plugin"
+WOS_BIN = REPO_ROOT / "bin" / "wos"
+TASK_SKILL = BUILTIN_PLUGIN / "skills" / "task" / "SKILL.md"
 
-TASK_PROMPT = (
-    "You are doing a coding task. Work only inside the current folder: it holds one git "
-    "worktree per repo, each already on the task branch. Run the tests. Commit your work in "
-    "each repo with clear messages. Do not push, merge, delete or spend unless your task says to; if you do, "
-    "the user is asked to approve it first. "
-    "Follow the task skill below to report progress and to say how this episode ends."
-)
-SKILL_FILE = Path(__file__).resolve().parents[2] / "base" / "plugin" / "skills" / "task" / "SKILL.md"
-
-
-def task_system_prompt() -> str:
-    """The task skill text, until skills are installed as a plugin."""
-    try:
-        text = SKILL_FILE.read_text()
-    except FileNotFoundError:
-        return TASK_PROMPT
-    if text.startswith("---"):
-        text = text.split("---", 2)[-1]
-    return TASK_PROMPT + "\n\n" + text.strip()
-TASK_TOOLS = "Read,Glob,Grep,Edit,Write,Bash"
-# Defence in depth only. The real wall is the wos Linux user and the systemd sandbox.
-TASK_DENY = "Bash(git push:*),Bash(gh:*),Bash(sudo:*),WebFetch,WebSearch," + SECRET_PATHS
+# Which agent runs in which mode, unless the workspace picked another (ctx["agent"]).
+DEFAULT_AGENT = {"chat": "wos:workspace", "task": "wos:workspace", "admin": "wos:admin"}
+SECRET_PATHS = "Read(~/.config/workspace-os/**)"        # nobody but the owner's card may read the secrets
 SECRET_ENV = ("TELEGRAM_BOT_TOKEN",)
+
+# With approvals on, only reads are pre-allowed and every other call goes to the permission check.
+READS = "Read,Glob,Grep"
+# For admin the same paths do not get denied: Claude Code is told to ask, and the ask goes to the permission check.
+ASK_SECRETS = json.dumps({"permissions": {"ask": [f"{tool}(~/.config/workspace-os/**)" for tool in ("Read", "Glob", "Grep")]}})
+# Hard denies for ordinary agents. Admin gets none: for admin the same things become a card.
+HARD_DENY = f"Bash(sudo:*),Bash(gh:*),{SECRET_PATHS}"
+# Without approvals (manual task CLI, WOS_APPROVALS=0) fixed lists apply instead.
+LEGACY_ALLOW = {"chat": READS, "admin": READS + ",Bash(bin/wos:*),Bash(./bin/wos:*)", "task": READS + ",Edit,Write,Bash"}
+LEGACY_DENY = {"chat": SECRET_PATHS, "admin": SECRET_PATHS,
+               "task": f"Bash(git push:*),Bash(gh:*),Bash(sudo:*),WebFetch,WebSearch,{SECRET_PATHS}"}
+
+
+def task_prompt() -> str | None:
+    """The task skill text, appended to the agent for task runs so it always knows the workflow."""
+    try:
+        text = TASK_SKILL.read_text()
+    except FileNotFoundError:
+        return None
+    return (text.split("---", 2)[-1] if text.startswith("---") else text).strip()
 
 
 @dataclass
@@ -64,62 +56,66 @@ class RunResult:
 class ClaudeRunner:
     def __init__(self, claude_bin: str = "claude", model: str | None = None, timeout: int = 600,
                  task_timeout: int = 1800, state_dir: Path | None = None, approvals: bool = False,
-                 workspace_mcp=None, approval_wait: int = 300, strict_mcp: bool = False):
+                 workspace_mcp=None, approval_wait: int = 300, strict_mcp: bool = False, plugins=None):
         self.claude_bin = claude_bin
         self.model = model
         self.timeout = timeout
         self.task_timeout = task_timeout
         self.state_dir, self.approvals = state_dir, approvals and state_dir is not None
         self.workspace_mcp, self.approval_wait, self.strict_mcp = workspace_mcp, approval_wait, strict_mcp
+        self.plugins = plugins           # object with .dirs(); None means just the built-in plugin
+
+    def plugin_dirs(self) -> list[Path]:
+        return self.plugins.dirs() if self.plugins else [BUILTIN_PLUGIN]
 
     def run(self, prompt: str, cwd: Path, mode: str = "chat", session_id: str | None = None,
             extra_env: dict | None = None, ctx: dict | None = None) -> RunResult:
-        if mode not in ("chat", "task", "admin"):
+        if mode not in DEFAULT_AGENT:
             raise ValueError(f"unknown mode: {mode}")
-        cmd = [self.claude_bin, "-p", "--output-format", "json"]
-        if mode == "chat":
-            cmd += ["--append-system-prompt", CHAT_PROMPT, "--allowedTools", CHAT_TOOLS,
-                    "--disallowedTools", SECRET_PATHS]
-        elif mode == "admin":
-            cmd += ["--append-system-prompt", ADMIN_PROMPT, "--allowedTools", ADMIN_TOOLS,
-                    "--disallowedTools", SECRET_PATHS]
-        else:
-            cmd += ["--append-system-prompt", task_system_prompt(), "--allowedTools", TASK_TOOLS,
-                    "--disallowedTools", TASK_DENY]
-        mcp_file = None
+        agent = (ctx or {}).get("agent") or DEFAULT_AGENT[mode]
+        cmd = [self.claude_bin, "-p", "--output-format", "json", "--agent", agent]
+        for plugin in self.plugin_dirs():
+            cmd += ["--plugin-dir", str(plugin)]
+        if mode == "task" and task_prompt():
+            cmd += ["--append-system-prompt", task_prompt()]
+        env_extra = {"WOS_BIN": str(WOS_BIN), **(extra_env or {})}
+        mcp_file = admin_token = None
         if ctx is not None and self.approvals:
-            # Approvals on: only reads are pre-allowed. Everything else asks the permission check, which
-            # applies the workspace's grants or raises a card on my phone.
             from .mcp import write_run_config
             servers = self.workspace_mcp.servers(ctx.get("workspace")) if self.workspace_mcp else {}
             mcp_file = write_run_config(self.state_dir, {**ctx, "mode": mode}, servers, self.approval_wait)
-            prompt_flag = {"chat": CHAT_PROMPT, "admin": ADMIN_PROMPT, "task": task_system_prompt()}[mode]
-            cmd = [self.claude_bin, "-p", "--output-format", "json", "--append-system-prompt", prompt_flag,
-                   "--allowedTools", APPROVED_TOOLS, "--disallowedTools", APPROVED_DENY,
-                   "--mcp-config", str(mcp_file), "--permission-prompt-tool", "mcp__wos__approve"]
+            cmd += ["--allowedTools", READS, "--mcp-config", str(mcp_file), "--permission-prompt-tool", "mcp__wos__approve"]
+            if mode != "admin":
+                cmd += ["--disallowedTools", HARD_DENY]
+            else:
+                cmd += ["--settings", ASK_SECRETS]
             if self.strict_mcp:       # off by default: connectors (Gmail...) stay visible, every call is still checked
                 cmd.append("--strict-mcp-config")
-            extra_env = {**(extra_env or {}), "WOS_AGENT": "1", "WOS_WORKSPACE": ctx.get("workspace") or ""}
-        timeout = self.task_timeout if mode == "task" else self.timeout
+            env_extra.update({"WOS_AGENT": "1", "WOS_WORKSPACE": ctx.get("workspace") or ""})
+            if mode == "admin":
+                admin_token = tokens.issue(self.state_dir)     # lets bin/wos accept changes the owner approved on a card
+                env_extra["WOS_ADMIN"] = admin_token
+        else:
+            cmd += ["--allowedTools", LEGACY_ALLOW[mode], "--disallowedTools", LEGACY_DENY[mode]]
         if self.model:
             cmd += ["--model", self.model]
         if session_id:
             cmd += ["--resume", session_id]
-        # Prompt goes through stdin and the command is a list: message text never touches a shell.
+        timeout = self.task_timeout if mode == "task" else self.timeout
+        # The prompt goes through stdin and the command is a list: message text never touches a shell.
         env = {k: v for k, v in os.environ.items() if k not in SECRET_ENV}
-        env.update(extra_env or {})
+        env.update(env_extra)
         try:
-            return self._run(cmd, prompt, cwd, env, timeout, session_id, mcp_file)
+            return self._run(cmd, prompt, cwd, env, timeout, session_id)
         finally:
             if mcp_file:
                 mcp_file.unlink(missing_ok=True)
+            if admin_token:
+                tokens.revoke(self.state_dir, admin_token)
 
-    def _run(self, cmd, prompt, cwd, env, timeout, session_id, mcp_file) -> RunResult:
+    def _run(self, cmd, prompt, cwd, env, timeout, session_id) -> RunResult:
         try:
-            proc = subprocess.run(
-                cmd, input=prompt, cwd=cwd, env=env,
-                capture_output=True, text=True, timeout=timeout,
-            )
+            proc = subprocess.run(cmd, input=prompt, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             return RunResult("error", f"Timed out after {timeout}s.", session_id)
         except FileNotFoundError:

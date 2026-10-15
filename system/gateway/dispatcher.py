@@ -42,8 +42,9 @@ def resume_prompt(task: dict, wos_bin: str) -> str:
 
 
 class Dispatcher:
-    def __init__(self, cfg, store: TaskStore, registry: Registry, runner, channel, pool, write_log):
+    def __init__(self, cfg, store: TaskStore, registry: Registry, runner, channel, pool, write_log, limits=None, gate=None):
         self.cfg, self.store, self.registry = cfg, store, registry
+        self.limits, self.gate = limits, gate
         self.runner, self.channel, self.pool, self.write_log = runner, channel, pool, write_log
         self.live: set[int] = set()
         self._lock = threading.Lock()
@@ -120,7 +121,8 @@ class Dispatcher:
     def pick_up(self) -> None:
         for task in self.store.list(statuses=("ready",)):
             with self._lock:
-                if task["id"] in self.live or len(self.live) >= self.cfg.max_runs:
+                cap = self.limits.max_runs() if self.limits else self.cfg.max_runs
+                if task["id"] in self.live or len(self.live) >= cap:
                     continue
                 try:
                     self.store.claim(task["id"])
@@ -152,8 +154,13 @@ class Dispatcher:
                 self.store.update(task_id, lambda t: t.update(branch=branch))
             prompt = (resume_prompt if task["session_id"] else first_prompt)(task, self.wos_bin)
             env = {"WOS_TASK_ID": str(task_id), "WOS_BIN": self.wos_bin}
-            ctx = {"workspace": task["workspace"], "task_id": task_id, "notify": task.get("notify")}
-            result = self.runner.run(prompt, cwd, "task", task["session_id"], env, ctx)
+            ctx = {"workspace": task["workspace"], "task_id": task_id, "notify": task.get("notify"),
+                   "agent": self.registry.all().get(task["workspace"], {}).get("agent")}
+            if self.gate:
+                with self.gate:
+                    result = self.runner.run(prompt, cwd, "task", task["session_id"], env, ctx)
+            else:
+                result = self.runner.run(prompt, cwd, "task", task["session_id"], env, ctx)
             self.write_log(self.cfg.state_dir, f"task:{task_id}", "task", result)
             if result.session_id:
                 self.store.update(task_id, lambda t: t.update(session_id=result.session_id))

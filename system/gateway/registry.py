@@ -67,6 +67,18 @@ class Registry:
             workspaces[name].pop("telegram_chat", None)
             self._write(workspaces)
 
+    def set_agent(self, name: str, agent: str | None) -> None:
+        """The agent that answers in this workspace. None puts it back to the built-in default."""
+        with _locked(self.path):
+            workspaces = self.all()
+            if name not in workspaces:
+                raise RegistryError(f"no workspace named {name!r}")
+            if agent:
+                workspaces[name]["agent"] = agent
+            else:
+                workspaces[name].pop("agent", None)
+            self._write(workspaces)
+
     def by_chat(self, chat_id: int) -> tuple[str, dict] | None:
         for name, entry in self.all().items():
             if entry.get("telegram_chat") == chat_id:

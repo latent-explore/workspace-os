@@ -23,15 +23,18 @@ The one high-privilege agent. It is me, by proxy.
 - **Manual mode by default.** Only reads are pre-allowed. Everything else raises a card (Telegram) or the normal prompt (terminal). "Always allow" saves an admin-scope rule that I can remove.
 - **Hard denies for other agents become an ask for admin:** editing permissions, the secrets folder, raw `gh`. I approve each one. Nothing changes silently.
 - **Later:** a "trusted" mode, on for a limited time, so routine work needs fewer taps.
-- `bin/wos-admin` is only a launcher for the terminal. It starts the same admin agent with the right flags.
+- `bin/wos-admin` is only a launcher for the terminal. It starts the same admin agent with the right flags. No agent can start it.
+- Only the admin agent creates workspaces and links groups. Ordinary agents are denied those commands.
+- The secrets folder, the rule files (`permissions.yaml`, `plugins.yaml`, `limits.yaml`) and the state folder always ask for admin, offer no "always", and are denied to everyone else.
 
 ### workspace (the default agent)
 What answers when I chat in a workspace group. Its prompt says: you work in this workspace; its repos are in `repos.yaml`; reply in at most 5 short lines, one question at a time; read `docs/ROADMAP.md` for goals; write what you learn to `docs/LOG.md`; put long answers in a file. The workspace's own `CLAUDE.md` adds the specifics.
 - **Task runs** use the same agent plus the `task` skill (how to report, sleep, and end an episode).
+- **Careful:** an agent file inside a workspace's own `.claude/agents/` is editable by that workspace's agents. Only select such an agent after you have read it.
 - **The default can be changed per workspace.** Admin sets it: `/agent <workspace> <name>`. The name can be a plugin agent, or an agent file in the workspace's own `.claude/agents/`. Stored in the registry as `agent:`.
 
 ## Plan
-Small steps, in this order. Each ends with a test.
+Small steps, in this order. Each ends with a test. **A to D are built** (E waits for details).
 
 **A. Agents as files**
 - Make `base/plugin` a real plugin (`.claude-plugin/plugin.json`) with `agents/admin.md` and `agents/workspace.md`. The `task` and `workspace-os` skills stay.
@@ -49,8 +52,9 @@ Small steps, in this order. Each ends with a test.
 - Check: switching a workspace's agent changes who answers.
 
 **D. Plugins and limits**
-- Permission `plugin`: admin installs and removes plugins at workspace-os scope. The list lives in `state/plugins.yaml`; the runner passes one `--plugin-dir` per entry. Their agents and skills become available.
-- Permission `limits`: admin changes the run cap, up to a hard maximum.
+- Plugins: admin installs and removes plugins at workspace-os scope (`bin/wos plugin ...`, `/plugins`). The list lives in `state/plugins.yaml`; the runner passes one `--plugin-dir` per entry. Their agents and skills become available.
+- Limits: admin changes the run cap (`bin/wos limits set max_runs N`, `/limits N`), up to a hard maximum.
+- These are owner-level commands, not workspace capabilities: ordinary agents are denied, the admin agent gets a card (allow once / deny, never "always"). Inside the CLI the admin agent proves itself with a per-run token, so setting an env flag by hand does nothing.
 - Check: install a plugin, see its agent appear, use it in a workspace.
 
 **E. Create groups from the admin agent (MTProto)**

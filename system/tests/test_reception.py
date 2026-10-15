@@ -46,7 +46,8 @@ class ReceptionTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         self.cfg = cfg_mod.Config("t", ME, self.root / "chat", self.root / "state", None, 1, "claude", 60, 60,
-                                  self.root / "s.yaml", self.root / "repo", self.root / "ws", self.root / "reg.yaml")
+                                  self.root / "s.yaml", self.root / "repo", self.root / "ws", self.root / "reg.yaml",
+                                  admin_dir=self.root / "admin")
         self.cfg.state_dir.mkdir()
         self.channel, self.runner = FakeChannel(), FakeRunner()
         self.gw = Gateway(self.cfg, self.channel, self.runner)
@@ -56,10 +57,10 @@ class ReceptionTests(unittest.TestCase):
         self.assertEqual(normalize("  plain text "), "plain text")
 
     def test_routes(self):
-        self.assertEqual(self.gw.route(msg("x", 7, "private")), (self.cfg.chat_dir, "chat", None))
+        self.assertEqual(self.gw.route(msg("x", 7, "private")), (self.cfg.admin_dir, "admin", None))   # only I can reach it
         self.assertIsNone(self.gw.route(msg("x", -1)))                     # unknown group: nowhere
         self.gw.handle(msg("/admin", -1))
-        self.assertEqual(self.gw.route(msg("x", -1)), (self.cfg.repo_dir, "admin", None))
+        self.assertEqual(self.gw.route(msg("x", -1)), (self.cfg.admin_dir, "admin", None))
         self.gw.registry.add("inv", self.root / "ws" / "inv")
         self.gw.registry.bind("inv", -2)
         self.assertEqual(self.gw.route(msg("x", -2)), (self.root / "ws" / "inv", "chat", "inv"))
@@ -94,7 +95,7 @@ class ReceptionTests(unittest.TestCase):
     def test_reception_runs_in_admin_mode_in_repo_dir(self):
         self.gw.handle(msg("/admin", -1))
         self.gw.run_chat(msg("create a workspace", -1))
-        self.assertEqual(self.runner.calls[-1], ("create a workspace", self.cfg.repo_dir, "admin"))
+        self.assertEqual(self.runner.calls[-1], ("create a workspace", self.cfg.admin_dir, "admin"))
 
     def test_strangers_are_ignored(self):
         self.gw.handle(msg("/admin", -1, user=999))
@@ -131,7 +132,7 @@ class WorkspaceTests(unittest.TestCase):
         out = self.make()
         ws = Path(out["path"])
         self.assertTrue((ws / "api" / ".git").exists())
-        self.assertIn("Lead agent for the inv", (ws / "CLAUDE.md").read_text())
+        self.assertIn("# Workspace: inv", (ws / "CLAUDE.md").read_text())
         self.assertIn("api/", (ws / ".gitignore").read_text())
         self.assertIn("api", (ws / "repos.yaml").read_text())
         self.assertTrue(out["committed"])

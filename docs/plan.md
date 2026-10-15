@@ -93,7 +93,7 @@ Each has a few operations. Swap what's behind it without touching the rest.
 
 Example planning chat: idea → questions and answers (each message is a `--resume`) → I tap **Approve** → kernel writes the GitHub issue → kernel starts a **task** run in a new worktree.
 
-Chat replies are never re-summarized. The "reply short" rule is in the Lead's system prompt. Replies over 4096 characters are split or sent as a file by the Telegram adapter. Long chats cost more (each resume reloads history), so move the plan into the issue early.
+Chat replies are never re-summarized. The "reply short" rule is in the workspace agent's prompt (`base/plugin/agents/workspace.md`). Replies over 4096 characters are split or sent as a file by the Telegram adapter. Long chats cost more (each resume reloads history), so move the plan into the issue early.
 
 Notes:
 - The session ID lives on disk, so a crash loses nothing.
@@ -201,17 +201,18 @@ Changed from before: the dispatcher and relay are now **one** gateway, so one se
 
 **Step 4: Setup skill, for what is built so far.**
 - `/workspace-os setup`: host check, repos, `wos` user, systemd service, schedules, secrets file. Safe to re-run. Built as a skill (the guide) over scripts (the checks and the work): `setup/status.sh` is a read-only checklist, `setup/create-user.sh` and `setup/install-gateway-system.sh` do the sudo parts, which the user runs.
-- `/workspace-os add <name>`: folder, workspace repo, repos list, registry entry, Telegram group, workspace Lead agent.
+- `/workspace-os add <name>`: folder, workspace repo, repos list, registry entry, Telegram group, and the workspace's default agent (`wos:workspace`, switchable with `/agent`).
 - *Done when:* `add` creates a test workspace end to end.
 
-**Step 4b: Agents as files.** Concrete plan in `docs/agents.md`: agent files in a plugin (A), the high-privilege admin agent with cards (B), a switchable default agent per workspace (C), plugins and limits (D), group creation through a user-account client (E). Do A to C before onboarding.
+**Step 4b: Agents as files.** Concrete plan in `docs/agents.md`: agent files in a plugin (A), the high-privilege admin agent with cards (B), a switchable default agent per workspace (C), plugins and limits (D), group creation through a user-account client (E). A to D are built; E (group creation) waits for details.
 
-**Step 5: Onboard 2-3 workspaces** with `add`. Task management (step 3b) is deployed and tested here, on the real workspaces, not before. Each has several repos and its own focused agent (the Lead). Candidates: AI Updates, Email, Research Assistant.
+**Step 5: Onboard 2-3 workspaces** with `add`. Task management (step 3b) is deployed and tested here, on the real workspaces, not before. Each has several repos and the default workspace agent (switchable per workspace). Candidates: AI Updates, Email, Research Assistant.
 
 **Later (todo):**
 - **Long-running jobs.** *What:* training and experiments must outlive the agent and a gateway restart, with their own RAM and core caps. *How:* one systemd unit (a job manager) supervises all long jobs. A small contract lets an agent hand a job over: a job spec file with the command, working folder, resource limits, log path, a progress/heartbeat file, and a done signal (exit-code file). The manager starts and watches jobs; the existing free wake-up check (`task resume --check`) reads the done signal. Needs a decision on where it runs (the `wos` user manager with linger, or a system unit). An early version exists in `gateway/jobs.py` and `bin/wos task job`, tested as my user only; it will be replaced by this design.
 - **Policy layer: built (v1).** Per-workspace capabilities (`edit_files`, `shell`, `web`, `github`, `create_repos`, `mcp_manage`) plus allow rules, checked on every tool call. Anything not granted raises an approval card (Allow once / Always allow / Deny) and the run waits for the tap. The admin agent works at workspace granularity: it can edit files, use GitHub and manage MCP servers only for workspaces that were granted those capabilities. See `system/README.md`.
 - **Per-workspace GitHub tokens.** The shared `wos` token is broad, and the per-workspace GitHub limits are policy only (an agent with `shell` could read the token). *How:* one fine-grained token per workspace, kept where only `bin/wos gh` can read it, passed as `GH_TOKEN` for that workspace, with the shared login removed from the sandbox. Needs a place the agent cannot read, i.e. a separate user or a root-owned helper.
+- **Keep the admin proof out of reach.** The per-run admin token travels in an env var, which a shell-capable agent could replay while an admin run is live. Fix: hand it over through the approver instead of the environment, and have `bin/wos` ask the gateway to confirm. Also deny globbed or quoted spellings of protected names.
 - **Approvals without holding a run slot.** A waiting card holds a slot. Instead the run could end as "waiting for approval" and resume on the tap.
 - Plan-approval cards (Approve / Change / Discuss on a plan; permission cards already exist).
 - Billing check for headless `claude -p` on Pro.
@@ -233,7 +234,7 @@ Rule: build only what the next workspace needs.
 | Telegram | Workspace OS |
 |---|---|
 | The bot | One bot for everything (no extra bots needed) |
-| A group (forum mode on) | One workspace. Its Lead agent lives in the General topic. |
+| A group (forum mode on) | One workspace. Its default agent answers in the General topic. |
 | A topic | One session ID. The gateway maps (group, topic) to (workspace, session). |
 | Private chat with the bot | Alerts and cross-workspace questions |
 

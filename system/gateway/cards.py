@@ -13,7 +13,7 @@ CODES = {"o": "allow_once", "a": "allow_always", "d": "deny"}
 
 def describe(item: dict) -> str:
     ctx, tool, data = item["ctx"], item["tool_name"], item["input"]
-    where = ctx.get("workspace") or "no workspace"
+    where = ctx.get("workspace") or ("admin" if ctx.get("mode") == "admin" else "no workspace")
     if ctx.get("task_id"):
         where += f" · task #{ctx['task_id']}"
     if tool == "Bash":
@@ -39,7 +39,7 @@ class ApprovalCards:
             ask_always = self.perms.rule_for(item["ctx"], item["tool_name"], item["input"]) is not None
             buttons = [("Allow once", f"ap:{item['id']}:o")]
             if ask_always:
-                buttons.append((f"Always allow for {item['ctx'].get('workspace')}", f"ap:{item['id']}:a"))
+                buttons.append((f"Always allow for {self.perms.scope(item['ctx']).lstrip('_')}", f"ap:{item['id']}:a"))
             buttons.append(("Deny", f"ap:{item['id']}:d"))
             try:
                 message_id = self.channel.send_card(chat_id, describe(item), buttons, target.get("thread_id"))

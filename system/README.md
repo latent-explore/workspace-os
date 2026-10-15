@@ -43,23 +43,39 @@ cd system
 ```
 `WOS_TASK_TIMEOUT` (default 1800s) sets the time limit for a task run.
 
-## Reception (admin group)
+## Agents, plugins and limits
 
-One Telegram group is the admin channel. Messages there run in the workspace-os folder as an admin agent that can only use `bin/wos`.
+Agents are files in plugins (see `docs/agents.md`). The runner starts one with `claude --agent <name> --plugin-dir ...`.
 
+| Where | Who answers |
+|---|---|
+| My private chat and the Reception group | `wos:admin`: all tools, manual mode, in the wos home |
+| A linked workspace group, and task runs | the workspace's default agent, `wos:workspace`, unless the owner picked another with `/agent` |
+| A scheduled prompt | `wos:workspace` with no workspace (so everything asks) |
+
+Admin is the only agent for which "hard denies" (the secrets folder, permission and state files, raw `gh`, plugin and limit changes) become a card. Those cards offer **Allow once / Deny**, never "Always". Only the admin agent can create workspaces or link groups; ordinary agents are denied those `bin/wos` commands. Inside `bin/wos` the admin agent proves itself with a one-run token (`WOS_ADMIN`), so an env flag set by hand does nothing.
+
+**Reception (admin group).** One Telegram group is the admin channel.
 1. Create the group, add the bot, make it an admin (turn on Topics if you want them).
 2. Send `/admin` in the group. It becomes Reception (can be set once).
 3. In any other group, send one message so the bot sees it. In Reception, `/groups` lists every group it has seen.
 4. Create a workspace by chatting in Reception: "create workspace invoicer with https://github.com/me/api and https://github.com/me/web".
 5. Link a group: `/bind <group id> <workspace>` (or ask in chat).
 
-Commands (Reception only): `/groups`, `/workspaces`, `/bind <group id> <workspace>`, `/unbind <workspace>`.
-Anywhere: `/new`, `/schedules`, `/stop <id>`, `/resume <id>`, `/id`.
+**Commands (Reception only):** `/groups`, `/workspaces`, `/bind <group id> <workspace>`, `/unbind <workspace>`, `/perms`, `/grant`, `/revoke`, `/allow`, `/unallow`, `/agents [workspace]`, `/agent <workspace> [name|default]`, `/plugins`, `/limits [N]`.
+**Anywhere:** `/new`, `/schedules`, `/stop <id>`, `/resume <id>`, `/id`, and the task commands.
 
-A linked group runs in its workspace folder (read-only chat for now). An unlinked group runs nothing and says so.
-`bin/wos` does the same things from a shell: `bin/wos workspace add|list`, `bin/wos groups`, `bin/wos bind`, `bin/wos unbind`.
+**Agent per workspace.** `/agent <workspace> <name>` picks who answers in that workspace's group and runs its tasks. The name can be any plugin agent (`plugin:agent`) or an agent file in the workspace's own `.claude/agents/`. `default` goes back to `wos:workspace`. `/agents <workspace>` lists the choices.
 
-Env keys: `WOS_WORKSPACES_DIR` (default `~/workspaces`), `WOS_REGISTRY` (default: `workspaces.yaml` in the state dir), `WOS_REPO_DIR`.
+**Plugins.** `bin/wos plugin install https://github.com/owner/repo` (or `add NAME PATH`, `remove NAME`, `list`) installs a plugin at workspace-os scope; its agents and skills become available to every run. The built-in `wos` plugin is always loaded. Installed plugins live in `~/plugins` and are listed in `state/plugins.yaml`.
+
+**Limits.** `/limits N` or `bin/wos limits set max_runs N` changes how many runs go at once, with no restart, up to `WOS_HARD_MAX_RUNS` (default 4). The default is `WOS_MAX_RUNS` (1).
+
+**Terminal.** Log in as `wos` and run `bin/wos-admin`: the same admin agent, with Claude's own prompts doing the asking.
+
+`bin/wos` also works from a shell: `workspace add|list|agent`, `groups`, `bind`, `unbind`, `agents`, `plugin`, `limits`, `perms`, `gh`, `mcp`, `task`, `admin`.
+
+Env keys: `WOS_WORKSPACES_DIR` (default `~/workspaces`), `WOS_REGISTRY`, `WOS_REPO_DIR`, `WOS_ADMIN_DIR` (default the wos home), `WOS_PLUGINS_DIR` (default `~/plugins`).
 
 ## Tasks (step 3b)
 
@@ -95,9 +111,10 @@ How a run is checked: only reads are pre-allowed. Every other tool call goes to 
 
 Connectors (Gmail, Calendar...) from the logged-in Claude account are visible to every run, but each call still goes through the check. Tap "Always allow" on a card, or give a workspace a whole connector up front: `/allow email mcp__claude_ai_Gmail__*` (`/unallow` removes it). Set `WOS_STRICT_MCP=1` to hide everything except the workspace's own MCP servers.
 
-Hard denies, no card: reading the secrets folder, raw `gh` (use `bin/wos gh`), `bin/wos perms` from an agent.
+Hard denies for ordinary agents, no card: reading the secrets folder, raw `gh` (use `bin/wos gh`), `bin/wos perms`, plugin and limit changes. For the admin agent each of these is a card.
+A saved "always allow" shell rule matches by prefix and is never saved or applied for commands with `$(`, backticks, redirects (`>`, `<`) or open-ended tools (`find`, `sed`, `tar`, `awk`...).
 Claude Code runs plain read-only shell commands (`ls`, `uname`...) without asking, so those never reach the check.
 Set `WOS_APPROVALS=0` to fall back to the old fixed allow lists.
 
-**This is a policy layer, not a wall.** Agents run as the same Linux user, so an agent with `shell` could still write code that reads the GitHub token. The wall is the `wos` user and the systemd sandbox. Real per-workspace GitHub isolation needs one fine-grained token per workspace (todo in `docs/plan.md`).
+**This is a policy layer, not a wall.** The check for protected names (secrets folder, rule files, `WOS_ADMIN`) looks at the command text, so shell tricks such as globs (`run-t*`) or quoting can slip past it for an agent that has the `shell` capability. Treat `shell` as trusting that agent with the `wos` user. It also means an ordinary agent that writes a file mentioning those names (for example in a workspace that is the workspace-os repo itself) is refused. Agents run as the same Linux user, so an agent with `shell` could still write code that reads the GitHub token. The wall is the `wos` user and the systemd sandbox. Real per-workspace GitHub isolation needs one fine-grained token per workspace (todo in `docs/plan.md`).
 While a card is waiting, that run holds a run slot (`WOS_MAX_RUNS`), so other chats queue behind it.

@@ -14,8 +14,10 @@ from pathlib import Path
 
 from . import config as cfg_mod
 from .registry import Chats, Registry, RegistryError
-from . import ghwrap, jobs, outbox
+from . import ghwrap, jobs, outbox, tokens
+from .limits import Limits
 from .mcp import McpError, WorkspaceMcp
+from .plugins import Plugins, available_agents
 from .permissions import CAPABILITIES, Permissions
 from .tasks import STATUSES, TaskError, TaskStore, detail, parse_duration, summarize
 from .workspace import create_workspace
@@ -124,10 +126,77 @@ def run_task_command(args, cfg, registry) -> None:
             print("stopped")
 
 
+def agent_blocked(cfg) -> bool:
+    """True inside an ordinary agent run. The admin agent acts for the owner after a card, and proves it with a
+    live per-run token, so setting WOS_ADMIN by hand does nothing."""
+    return bool(os.environ.get("WOS_AGENT")) and not tokens.valid(cfg.state_dir, os.environ.get("WOS_ADMIN"))
+
+
+def workspace_path(registry, name: str | None) -> Path | None:
+    entry = registry.all().get(name) if name else None
+    return Path(entry["path"]) if entry else None
+
+
+def run_workspace_agent(args, cfg, registry) -> None:
+    if args.name not in registry.all():
+        raise RegistryError(f"no workspace named {args.name!r}")
+    current = registry.all()[args.name].get("agent", "default")
+    if args.agent is None:
+        print(f"{args.name}: {current}")
+        return
+    if agent_blocked(cfg):
+        raise ValueError("only the owner can change a workspace's agent")
+    if args.agent != "default" and args.agent not in available_agents(Plugins(cfg.state_dir, cfg.plugins_dir), workspace_path(registry, args.name)):
+        raise RegistryError(f"no agent named {args.agent!r}. See: bin/wos agents {args.name}")
+    registry.set_agent(args.name, None if args.agent == "default" else args.agent)
+    print(f"{args.name} now uses {args.agent}.")
+
+
+def run_plugin_command(args, cfg) -> None:
+    plugins = Plugins(cfg.state_dir, cfg.plugins_dir)
+    if args.action == "list":
+        print("\n".join(plugins.listing()))
+        return
+    if agent_blocked(cfg):
+        raise ValueError("only the owner can install or remove plugins")
+    if args.action == "add":
+        plugins.add(args.name, Path(args.path))
+        print(f"added {args.name}")
+    elif args.action == "install":
+        print(f"installed {plugins.install(args.url, args.name)}")
+    else:
+        plugins.remove(args.name)
+        print(f"removed {args.name}")
+
+
+def run_limits_command(args, cfg) -> None:
+    limits = Limits(cfg.state_dir, cfg.max_runs, cfg.hard_max_runs)
+    if args.action == "show":
+        print(f"max_runs={limits.max_runs()} (hard maximum {limits.hard_max})")
+        return
+    if agent_blocked(cfg):
+        raise ValueError("only the owner can change limits")
+    limits.set_max_runs(args.value)
+    print(f"max_runs={limits.max_runs()}")
+
+
+def launch_admin(cfg, extra: list[str]) -> None:
+    """Start the admin agent in this terminal. Claude's own prompts do the asking."""
+    if os.environ.get("WOS_AGENT"):
+        raise ValueError("the admin agent can only be started by the owner, in a terminal")
+    from .runner import WOS_BIN
+    plugins = Plugins(cfg.state_dir, cfg.plugins_dir)
+    cmd = [cfg.claude_bin, "--agent", "wos:admin", *[a for d in plugins.dirs() for a in ("--plugin-dir", str(d))],
+           *(extra[1:] if extra[:1] == ["--"] else extra)]
+    os.environ["WOS_BIN"] = str(WOS_BIN)
+    os.chdir(cfg.admin_dir)
+    os.execvp(cmd[0], cmd)
+
+
 def run_perms_command(args, cfg, registry) -> None:
-    """Changing permissions is for the user only. An agent run sets WOS_AGENT, so it is refused here."""
+    """Changing permissions is for the owner only. An ordinary agent run sets WOS_AGENT and is refused here."""
     perms = Permissions(cfg.state_dir, registry)
-    if args.action != "show" and os.environ.get("WOS_AGENT"):
+    if args.action != "show" and agent_blocked(cfg):
         raise ValueError("only the user can change permissions (use /grant in Reception)")
     if args.action == "show":
         names = [args.workspace] if args.workspace else list(registry.all())
@@ -136,7 +205,7 @@ def run_perms_command(args, cfg, registry) -> None:
             print(f"{name}: capabilities={shown['capabilities']} rules={shown['allow']}")
         print("capabilities: " + ", ".join(CAPABILITIES))
         return
-    if args.workspace not in registry.all():
+    if args.workspace not in registry.all() and not (args.workspace == "_admin" and args.action in ("rule", "unrule")):
         raise RegistryError(f"no workspace named {args.workspace!r}")
     {"grant": perms.grant, "revoke": perms.revoke, "rule": perms.add_rule, "unrule": perms.remove_rule}[args.action](
         args.workspace, args.value)
@@ -157,7 +226,7 @@ def run_mcp_command(args, cfg, registry) -> None:
     if args.action == "list":
         print(json.dumps(store.servers(args.workspace), indent=2))
         return
-    if os.environ.get("WOS_AGENT") and "mcp_manage" not in Permissions(cfg.state_dir, registry).caps(args.workspace):
+    if agent_blocked(cfg) and "mcp_manage" not in Permissions(cfg.state_dir, registry).caps(args.workspace):
         raise ValueError(f"{args.workspace!r} may not manage MCP servers. The user can allow it with /grant {args.workspace} mcp_manage")
     if args.action == "add":
         command = args.command[1:] if args.command[:1] == ["--"] else args.command
@@ -177,12 +246,31 @@ def main(argv=None) -> int:
     add.add_argument("name")
     add.add_argument("--repo", action="append", default=[])
     ws.add_parser("list")
+    ws_agent = ws.add_parser("agent", help="show or set the agent that answers in a workspace")
+    ws_agent.add_argument("name")
+    ws_agent.add_argument("agent", nargs="?", help="agent name, or 'default'")
     sub.add_parser("groups")
     bind = sub.add_parser("bind")
     bind.add_argument("chat_id", type=int)
     bind.add_argument("name")
     sub.add_parser("unbind").add_argument("name")
     add_task_parser(sub)
+    sub.add_parser("agents").add_argument("workspace", nargs="?")
+    plugin = sub.add_parser("plugin").add_subparsers(dest="action", required=True)
+    plugin.add_parser("list")
+    plugin_add = plugin.add_parser("add")
+    plugin_add.add_argument("name")
+    plugin_add.add_argument("path")
+    plugin_install = plugin.add_parser("install")
+    plugin_install.add_argument("url")
+    plugin_install.add_argument("--name")
+    plugin.add_parser("remove").add_argument("name")
+    limits = sub.add_parser("limits").add_subparsers(dest="action", required=True)
+    limits.add_parser("show")
+    limits_set = limits.add_parser("set")
+    limits_set.add_argument("key", choices=["max_runs"])
+    limits_set.add_argument("value", type=int)
+    sub.add_parser("admin", help="start the admin agent in this terminal").add_argument("claude_args", nargs=argparse.REMAINDER)
     perms = sub.add_parser("perms").add_subparsers(dest="action", required=True)
     perms.add_parser("show").add_argument("workspace", nargs="?")
     for name in ("grant", "revoke", "rule", "unrule"):
@@ -206,6 +294,10 @@ def main(argv=None) -> int:
     cfg = cfg_mod.load()
     registry, chats = Registry(cfg.registry_path), Chats(cfg.state_dir)
     try:
+        # Creating workspaces and linking groups is the admin agent's job. Checked here too, so wrapping the
+        # call in `bash -c` does not get an ordinary agent past the permission check.
+        if (args.cmd in ("bind", "unbind") or (args.cmd == "workspace" and args.action == "add")) and agent_blocked(cfg):
+            raise ValueError("only the admin agent can create workspaces or link groups")
         if args.cmd == "workspace" and args.action == "add":
             created = create_workspace(args.name, args.repo, cfg.workspaces_dir, registry)
             Permissions(cfg.state_dir, registry).seed(args.name)       # default capabilities
@@ -214,13 +306,23 @@ def main(argv=None) -> int:
             run_task_command(args, cfg, registry)
         elif args.cmd == "perms":
             run_perms_command(args, cfg, registry)
+        elif args.cmd == "agents":
+            print("\n".join(available_agents(Plugins(cfg.state_dir, cfg.plugins_dir), workspace_path(registry, args.workspace))) or "none")
+        elif args.cmd == "plugin":
+            run_plugin_command(args, cfg)
+        elif args.cmd == "limits":
+            run_limits_command(args, cfg)
+        elif args.cmd == "admin":
+            launch_admin(cfg, args.claude_args)
         elif args.cmd == "gh":
             return run_gh_command(args, cfg, registry)
         elif args.cmd == "mcp":
             run_mcp_command(args, cfg, registry)
+        elif args.cmd == "workspace" and args.action == "agent":
+            run_workspace_agent(args, cfg, registry)
         elif args.cmd == "workspace":
             for name, entry in registry.all().items():
-                print(f"{name} | {entry['path']} | group {entry.get('telegram_chat', '-')}")
+                print(f"{name} | {entry['path']} | group {entry.get('telegram_chat', '-')} | agent {entry.get('agent', 'default')}")
         elif args.cmd == "groups":
             print("\n".join(describe_groups(chats, registry)) or "No groups seen yet. Send a message in the group first.")
         elif args.cmd == "bind":

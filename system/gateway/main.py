@@ -20,13 +20,16 @@ from .tasks import TaskError, TaskStore, detail, summarize
 from .workspace import workspace_repos
 from .approvals import Approvals
 from .cards import ApprovalCards
+from .limits import Limits, RunGate
 from .mcp import WorkspaceMcp
+from .plugins import Plugins, available_agents
 from .permissions import CAPABILITIES, Permissions
 from .telegram import Callback, Message, TelegramChannel
 
 log = logging.getLogger("gateway")
 GROUP_TYPES = ("group", "supergroup")
-ADMIN_ONLY = ("/groups", "/workspaces", "/bind", "/unbind", "/perms", "/grant", "/revoke", "/allow", "/unallow")
+ADMIN_ONLY = ("/groups", "/workspaces", "/bind", "/unbind", "/perms", "/grant", "/revoke", "/allow", "/unallow",
+              "/agent", "/agents", "/limits", "/plugins")
 TASK_COMMANDS = ("/tasks", "/task", "/addtask", "/cancel", "/retry", "/reply")
 
 
@@ -51,21 +54,23 @@ class Gateway:
         self.cards = ApprovalCards(cfg, self.approvals, channel, self.perms)
         self.offset = Offset(cfg.state_dir)
         self.locks: dict[str, threading.Lock] = defaultdict(threading.Lock)  # one run per conversation
-        self.pool = ThreadPoolExecutor(max_workers=cfg.max_runs)  # concurrency cap
+        self.limits = Limits(cfg.state_dir, cfg.max_runs, cfg.hard_max_runs)
+        self.gate = RunGate(self.limits)                               # the run cap, changeable without a restart
+        self.plugins = Plugins(cfg.state_dir, cfg.plugins_dir)
+        self.pool = ThreadPoolExecutor(max_workers=cfg.hard_max_runs)  # threads; the gate decides how many run
         self.scheduler = Scheduler(cfg.schedules_path, cfg.state_dir, self.fire_schedule, self.watchdog_ping)
         self.last_poll = time.time()
-        self.dispatcher = Dispatcher(cfg, self.tasks, self.registry, runner, channel, self.pool, write_run_log)
+        self.dispatcher = Dispatcher(cfg, self.tasks, self.registry, runner, channel, self.pool, write_run_log,
+                                     self.limits, self.gate)
 
     def reply(self, msg: Message, text: str) -> None:
         self.channel.notify(msg.chat_id, text, msg.thread_id)
 
     def route(self, msg: Message) -> tuple[Path, str, str | None] | None:
-        """Where does this chat run, in which mode, for which workspace? Private chat: neutral folder.
-        Reception: the workspace-os folder. A linked group: that workspace's folder. Anything else: nowhere."""
-        if msg.chat_type == "private":
-            return self.cfg.chat_dir, "chat", None
-        if msg.chat_id == self.chats.admin():
-            return self.cfg.repo_dir, "admin", None
+        """Where does this chat run, in which mode, for which workspace? My private chat and Reception:
+        the admin agent in the wos home. A linked group: that workspace's folder. Anything else: nowhere."""
+        if msg.chat_type == "private" or msg.chat_id == self.chats.admin():
+            return self.cfg.admin_dir, "admin", None        # only the owner can reach either, so it is the admin agent
         found = self.registry.by_chat(msg.chat_id)
         return (Path(found[1]["path"]), "chat", found[0]) if found else None
 
@@ -168,6 +173,8 @@ class Gateway:
                 self.reply(msg, "\n".join(lines) or "No workspaces yet.")
             elif cmd == "/bind":
                 chat_id, _, name = arg.partition(" ")
+                if not chat_id.lstrip("-").isdigit() or not name.strip():
+                    raise ValueError("Usage: /bind <group id> <workspace>")
                 self.registry.bind(name.strip(), int(chat_id))
                 self.reply(msg, f"Linked group {chat_id} to {name.strip()}.")
             elif cmd == "/unbind":
@@ -175,6 +182,28 @@ class Gateway:
                 self.reply(msg, f"Unlinked {arg}.")
             elif cmd == "/perms":
                 self.reply(msg, self.describe_permissions(arg))
+            elif cmd == "/agents":
+                path = self.registry.all().get(arg, {}).get("path") if arg else None
+                self.reply(msg, "\n".join(available_agents(self.plugins, Path(path) if path else None)) or "No agents.")
+            elif cmd == "/agent":
+                workspace, _, name = arg.partition(" ")
+                entry = self.registry.all().get(workspace)
+                if entry is None:
+                    raise RegistryError("Usage: /agent <workspace> [agent name | default]")
+                name = name.strip()
+                if not name:
+                    self.reply(msg, f"{workspace} uses {entry.get('agent', 'default')}.")
+                else:
+                    if name != "default" and name not in available_agents(self.plugins, Path(entry["path"])):
+                        raise RegistryError(f"no agent named {name!r}. See /agents {workspace}")
+                    self.registry.set_agent(workspace, None if name == "default" else name)
+                    self.reply(msg, f"{workspace} now uses {name}.")
+            elif cmd == "/limits":
+                if arg:
+                    self.limits.set_max_runs(int(arg))
+                self.reply(msg, f"Runs at once: {self.limits.max_runs()} (hard maximum {self.limits.hard_max}).")
+            elif cmd == "/plugins":
+                self.reply(msg, "\n".join(self.plugins.listing()))
             elif cmd in ("/allow", "/unallow"):
                 workspace, _, rule = arg.partition(" ")
                 if workspace not in self.registry.all() or not rule.strip():
@@ -188,7 +217,7 @@ class Gateway:
                 (self.perms.grant if cmd == "/grant" else self.perms.revoke)(workspace, capability.strip())
                 self.reply(msg, f"{'Granted' if cmd == '/grant' else 'Revoked'} {capability.strip()} for {workspace}.")
         except (RegistryError, ValueError) as exc:
-            self.reply(msg, f"Error: {exc}. Usage: /bind <group id> <workspace>")
+            self.reply(msg, f"Error: {exc}")
 
     def describe_permissions(self, workspace: str) -> str:
         if not workspace:
@@ -208,8 +237,10 @@ class Gateway:
                 return
             cwd, mode, workspace = target
             self.channel.typing(msg.chat_id, msg.thread_id)
-            ctx = {"workspace": workspace, "notify": {"chat_id": msg.chat_id, "thread_id": msg.thread_id}}
-            result = self.runner.run(normalize(msg.text), cwd, mode, self.sessions.get(msg.key), None, ctx)
+            ctx = {"workspace": workspace, "notify": {"chat_id": msg.chat_id, "thread_id": msg.thread_id},
+                   "agent": self.registry.all().get(workspace, {}).get("agent") if workspace else None}
+            with self.gate:
+                result = self.runner.run(normalize(msg.text), cwd, mode, self.sessions.get(msg.key), None, ctx)
             if result.session_id and result.status == "ok":
                 self.sessions.set(msg.key, result.session_id)
             write_run_log(self.cfg.state_dir, msg.key, mode, result)
@@ -232,7 +263,8 @@ class Gateway:
         key = f"sched:{entry.id}"
         with self.locks[key]:
             cwd = Path(entry.run.get("cwd") or self.cfg.chat_dir).expanduser()
-            result = self.runner.run(str(entry.run["prompt"]), cwd, "chat", None, None, {"workspace": None, "notify": None})  # fresh session each time
+            with self.gate:
+                result = self.runner.run(str(entry.run["prompt"]), cwd, "chat", None, None, {"workspace": None, "notify": None})  # fresh session each time
             write_run_log(self.cfg.state_dir, key, "chat", result)
             self.channel.notify(chat_id, result.text)
 
@@ -285,7 +317,8 @@ def main() -> None:
     Gateway(
         cfg, TelegramChannel(cfg.telegram_token, cfg.allowed_user_id),
         ClaudeRunner(cfg.claude_bin, cfg.model, cfg.run_timeout, cfg.task_timeout, cfg.state_dir,
-                     cfg.approvals, WorkspaceMcp(cfg.state_dir), cfg.approval_wait, cfg.strict_mcp),
+                     cfg.approvals, WorkspaceMcp(cfg.state_dir), cfg.approval_wait, cfg.strict_mcp,
+                     Plugins(cfg.state_dir, cfg.plugins_dir)),
     ).serve()
 
 

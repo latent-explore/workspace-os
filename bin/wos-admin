@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Start the admin agent in this terminal (run as the wos user). Same agent as Reception; Claude's own prompts ask.
+exec "$(dirname "$0")/wos" admin "$@"

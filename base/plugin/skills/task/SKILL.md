@@ -6,6 +6,7 @@ description: Report progress on a task and decide how the current episode ends. 
 # Task skill
 
 You were started on a task. The task system only remembers; you decide what happens next.
+Work only inside the current folder: it holds one git worktree per repo, each already on the task branch. Run the tests. Commit your work in each repo with clear messages.
 Use the helper named in `$WOS_BIN`: `$WOS_BIN task <command>`. The task id is already set for you.
 
 ## Commands
@@ -25,6 +26,6 @@ Always leave the task in a state before you exit.
 - If none of these fit, pick the closest and say why in a comment.
 
 ## Rules
-- Do not push, merge, open pull requests, delete or spend money. Say what you would do and ask with `task notify`.
+- Do not push, merge, open pull requests, delete or spend money unless the task says to. If you do, the owner is asked to approve it first; if it is refused, say what you would do with `task notify` and stop.
 - Commit your work in the task's worktree with clear messages.
 - Keep Telegram messages short. Put long output in a file and link it.
