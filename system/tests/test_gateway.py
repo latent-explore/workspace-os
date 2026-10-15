@@ -1,12 +1,13 @@
 import json
 import stat
 import tempfile
+import traceback
 import unittest
 from pathlib import Path
 
 from gateway.runner import ClaudeRunner, parse_output
 from gateway.state import Sessions
-from gateway.telegram import chunk, to_message
+from gateway.telegram import TelegramChannel, chunk, to_message
 
 
 class ChunkTests(unittest.TestCase):
@@ -33,6 +34,19 @@ class MessageTests(unittest.TestCase):
 
     def test_non_text_is_ignored(self):
         self.assertIsNone(to_message({"update_id": 1, "message": {"from": {"id": 1}, "chat": {"id": 1}}}))
+
+
+class TokenLeakTests(unittest.TestCase):
+    TOKEN = "123456:SECRET-TOKEN"
+
+    def test_network_errors_do_not_carry_the_bot_token(self):
+        chan = TelegramChannel(self.TOKEN, 1)
+        chan.base = f"http://127.0.0.1:9/bot{self.TOKEN}"       # nothing listens here: a real connection error
+        with self.assertRaises(RuntimeError) as ctx:
+            chan._call("getUpdates")
+        shown = "".join(traceback.format_exception(ctx.exception))
+        self.assertNotIn("SECRET-TOKEN", shown)
+        self.assertIn("ConnectionError", shown)
 
 
 class SessionTests(unittest.TestCase):

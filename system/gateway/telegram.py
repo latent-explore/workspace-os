@@ -76,8 +76,12 @@ class TelegramChannel:
         return self.allowed_user_id is not None and user_id == self.allowed_user_id
 
     def _call(self, method: str, **params):
-        resp = self.http.post(f"{self.base}/{method}", json=params, timeout=70)
-        data = resp.json()
+        try:
+            resp = self.http.post(f"{self.base}/{method}", json=params, timeout=70)
+            data = resp.json()
+        except requests.RequestException as exc:
+            # requests puts the URL, and so the bot token, in its error text. Keep only the error type.
+            raise RuntimeError(f"Telegram {method} failed: {type(exc).__name__}") from None
         if not data.get("ok"):
             raise RuntimeError(f"Telegram {method} failed: {data.get('description')}")
         return data["result"]
