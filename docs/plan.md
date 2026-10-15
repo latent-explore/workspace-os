@@ -204,7 +204,7 @@ Changed from before: the dispatcher and relay are now **one** gateway, so one se
 - `/workspace-os add <name>`: folder, workspace repo, repos list, registry entry, Telegram group, workspace Lead agent.
 - *Done when:* `add` creates a test workspace end to end.
 
-**Step 4b: Agents as files.** Concrete plan in `docs/agents.md`: agent files in a plugin (A), the high-privilege admin agent with cards (B), a lead per workspace (D). Do A and B before onboarding.
+**Step 4b: Agents as files.** Concrete plan in `docs/agents.md`: agent files in a plugin (A), the high-privilege admin agent with cards (B), a switchable default agent per workspace (C), plugins and limits (D), group creation through a user-account client (E). Do A to C before onboarding.
 
 **Step 5: Onboard 2-3 workspaces** with `add`. Task management (step 3b) is deployed and tested here, on the real workspaces, not before. Each has several repos and its own focused agent (the Lead). Candidates: AI Updates, Email, Research Assistant.
 
